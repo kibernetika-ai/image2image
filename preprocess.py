@@ -23,7 +23,7 @@ class VOXCeleb(object):
         # structure: {root}/txt/{idXXXX}/{video_id}/{XXXX}.txt
 
     def process_videos(self, output_dir):
-        txt_paths = glob.glob(os.path.join(self.data_dir, '*/*/*/*.txt'))
+        txt_paths = sorted(glob.glob(os.path.join(self.data_dir, '*/*/*/*.txt')))
         pool = futures.ThreadPoolExecutor(max_workers=4)
         for txt_path in txt_paths:
             video_id = txt_path.split('/')[-2]
