@@ -30,7 +30,6 @@ class VOXCeleb(object):
             video_url = f'https://www.youtube.com/watch?v={video_id}'
 
             pool.submit(self.process_video, video_dir,  video_url, os.path.join(output_dir, video_id))
-            break
             # self.process_video(video_url, frames, os.path.join(output_dir, video_id))
 
         pool.shutdown(wait=True)
