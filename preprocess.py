@@ -23,21 +23,28 @@ class VOXCeleb(object):
         # structure: {root}/txt/{idXXXX}/{video_id}/{XXXX}.txt
 
     def process_videos(self, output_dir):
-        txt_paths = sorted(glob.glob(os.path.join(self.data_dir, '*/*/*/*.txt')))
+        videos = sorted(glob.glob(os.path.join(self.data_dir, '*/*/*')))
         pool = futures.ThreadPoolExecutor(max_workers=4)
-        for txt_path in txt_paths:
-            video_id = txt_path.split('/')[-2]
+        for video_dir in videos:
+            video_id = video_dir.split('/')[-1]
             video_url = f'https://www.youtube.com/watch?v={video_id}'
-            frames = self.parse_txt(txt_path)
-            pool.submit(self.process_video, video_url, frames, os.path.join(output_dir, video_id))
+
+            pool.submit(self.process_video, video_dir,  video_url, os.path.join(output_dir, video_id))
             # self.process_video(video_url, frames, os.path.join(output_dir, video_id))
 
         pool.shutdown(wait=True)
 
         print(f'Result is saved in {output_dir}.')
 
-    def process_video(self, video_url, frames, output_dir):
+    def process_video(self, video_dir, video_url, output_dir):
         print(f'Start processing video {video_url}...')
+        # if os.path.exists(output_dir):
+        #     files = os.listdir(output_dir)
+        #     if len(files) == len(frames) + 1:
+        #         print(f'[video={video_url}] Already downloaded and processed, skipping.')
+        #         return
+
+        txt_paths = glob.glob(os.path.join(video_dir, '*.txt'))
         tmp = tempfile.mktemp(suffix='.mp4')
         try:
             out_path = tmp
@@ -58,31 +65,38 @@ class VOXCeleb(object):
             boxes = {}
             boxes_file = os.path.join(output_dir, 'boxes.json')
             prev_frame = None
-            for i, data in enumerate(frames):
-                frame_num, x, y, w, h = data
-                real_frame_num = round(frame_num / 25 * fps)
 
-                # read frame by real frame number
-                if prev_frame is not None:
-                    while real_frame_num - prev_frame > 1:
-                        vc.grab()
-                        prev_frame += 1
-                else:
-                    vc.set(cv2.CAP_PROP_POS_FRAMES, real_frame_num)
-                ret, frame = vc.read()
-                if not ret:
-                    break
+            for txt_path in txt_paths:
+                frames = self.parse_txt(txt_path)
+                for data in frames:
+                    frame_num, x, y, w, h = data
+                    real_frame_num = round(frame_num / 25 * fps)
 
-                # save frame
-                cv2.imwrite(os.path.join(output_dir, f'{i:05d}.jpg'), frame)
-                # Write in format x1,y1,x2,y2
-                boxes[f'{i:05d}.jpg'] = [x, y, x+w, y+h]
-                prev_frame = real_frame_num
+                    # read frame by real frame number
+                    if prev_frame is not None and real_frame_num > prev_frame:
+                        while real_frame_num - prev_frame > 1:
+                            vc.grab()
+                            prev_frame += 1
+                    else:
+                        vc.set(cv2.CAP_PROP_POS_FRAMES, real_frame_num)
+                    ret, frame = vc.read()
+                    if not ret:
+                        break
 
-            print(f'Saved {len(frames)} frames in {output_dir}')
+                    # save frame
+                    file_name = f'{real_frame_num:05d}.jpg'
+                    cv2.imwrite(os.path.join(output_dir, file_name), frame)
+                    # Write in format x1,y1,x2,y2
+                    if file_name in boxes:
+                        boxes[file_name].append([x, y, x+w, y+h])
+                    else:
+                        boxes[file_name] = [[x, y, x+w, y+h]]
+                    prev_frame = real_frame_num
+
+                print(f'Saved {len(frames)} frames in {output_dir}')
 
             with open(boxes_file, 'w') as f:
-                f.write(json.dumps(boxes))
+                f.write(json.dumps(boxes, indent=2))
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
