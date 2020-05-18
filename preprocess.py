@@ -121,6 +121,8 @@ class VOXCeleb(object):
 
             with open(boxes_file, 'w') as f:
                 f.write(json.dumps(boxes, indent=2))
+        except Exception as e:
+            print(e)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
