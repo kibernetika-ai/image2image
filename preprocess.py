@@ -30,6 +30,7 @@ class VOXCeleb(object):
             video_url = f'https://www.youtube.com/watch?v={video_id}'
 
             pool.submit(self.process_video, video_dir,  video_url, os.path.join(output_dir, video_id))
+            break
             # self.process_video(video_url, frames, os.path.join(output_dir, video_id))
 
         pool.shutdown(wait=True)
@@ -85,13 +86,37 @@ class VOXCeleb(object):
 
                     # save frame
                     file_name = f'{real_frame_num:05d}.jpg'
-                    cv2.imwrite(os.path.join(output_dir, file_name), frame)
+                    cropped_ratio = 0.2
+                    new_box = [
+                        max(round(x - cropped_ratio * w), 0),
+                        max(round(y - cropped_ratio * h), 0),
+                        min(round(x + w * (1.0 + cropped_ratio)), frame.shape[1]),
+                        min(round(y + h * (1.0 + cropped_ratio)), frame.shape[0]),
+                    ]
+                    cropped_frame = frame[new_box[1]:new_box[3], new_box[0]:new_box[2]]
+                    cv2.imwrite(os.path.join(output_dir, file_name), cropped_frame)
+                    new_box = [
+                        max(data[1] - new_box[0], 0),
+                        max(data[2] - new_box[1], 0),
+                        min(new_box[2] - data[1], cropped_frame.shape[1]),
+                        min(new_box[3] - data[2], cropped_frame.shape[0]),
+                    ]
                     # Write in format x1,y1,x2,y2
                     if file_name in boxes:
-                        boxes[file_name].append([x, y, x+w, y+h])
+                        boxes[file_name].append(new_box)
                     else:
-                        boxes[file_name] = [[x, y, x+w, y+h]]
+                        boxes[file_name] = [new_box]
                     prev_frame = real_frame_num
+                    # cv2.rectangle(
+                    #     cropped_frame,
+                    #     (new_box[0], new_box[1]),
+                    #     (new_box[2], new_box[3]),
+                    #     (0, 250, 0), thickness=1, lineType=cv2.LINE_AA
+                    # )
+                    # cv2.imshow('Video', cropped_frame)
+                    # key = cv2.waitKey(0)
+                    # if key == 27:
+                    #     return
 
                 print(f'Saved {len(frames)} frames in {output_dir}')
 
