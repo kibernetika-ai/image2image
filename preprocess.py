@@ -28,7 +28,6 @@ class VOXCeleb(object):
             video_url = f'https://www.youtube.com/watch?v={video_id}'
             frames = self.parse_txt(txt_path)
             self.process_video(video_url, frames, os.path.join(output_dir, video_id))
-            return
 
         print(f'Result is saved in {output_dir}.')
 
