@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 
+from concurrent import futures
 import cv2
 import youtube_dl
 
@@ -23,11 +24,15 @@ class VOXCeleb(object):
 
     def process_videos(self, output_dir):
         txt_paths = glob.glob(os.path.join(self.data_dir, '*/*/*/*.txt'))
+        pool = futures.ThreadPoolExecutor(max_workers=4)
         for txt_path in txt_paths:
             video_id = txt_path.split('/')[-2]
             video_url = f'https://www.youtube.com/watch?v={video_id}'
             frames = self.parse_txt(txt_path)
-            self.process_video(video_url, frames, os.path.join(output_dir, video_id))
+            pool.submit(self.process_video, video_url, frames, os.path.join(output_dir, video_id))
+            # self.process_video(video_url, frames, os.path.join(output_dir, video_id))
+
+        pool.shutdown(wait=True)
 
         print(f'Result is saved in {output_dir}.')
 
@@ -39,6 +44,7 @@ class VOXCeleb(object):
             ydl_opts = {
                 'format': 'best[height<=480]',
                 'outtmpl': out_path,
+                'noprogress': True,
             }
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
