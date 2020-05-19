@@ -2,10 +2,25 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
-def build_model():
+def build_model(image_shape=(320, 320)):
     # Build U-Net model
-    picture = layers.Input((None, None, 3))
+    picture = layers.Input((image_shape[0], image_shape[1], 3))
     landmarks = layers.Input((68, 2))
+
+    l1 = layers.Dense(3, use_bias=False)(landmarks)
+    l1 = layers.BatchNormalization()(l1)
+    l1 = layers.LeakyReLU()(l1)
+    # split on 4 groups
+    l2 = layers.Reshape([4, 17, 3])(l1)
+
+    l2 = layers.Conv2DTranspose(
+        64, (2, 2), strides=(image_shape[0] // 4, 1), padding='same'
+    )(l2)
+    l2 = layers.Conv2DTranspose(
+        32, (3, 3), strides=(1, image_shape[1] // 17 + 1), padding='same', output_padding=(0, 15)
+    )(l2)
+    l2 = layers.BatchNormalization()(l2)
+    l2 = layers.Dropout(0.1)(l2)
     # s = layers.Lambda(lambda x: x / 255)(inputs)
 
     c1 = layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(picture)
@@ -75,6 +90,8 @@ def build_model():
     c9 = layers.BatchNormalization()(c9)
 
     # outputs = layers.Dense(3, activation='sigmoid', kernel_initializer='he_normal')(c9)
-    outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
+    # outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
+    pre_outputs = layers.concatenate([c9, l2])
+    outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(pre_outputs)
     model = tf.keras.Model(inputs=[picture, landmarks], outputs=[outputs])
     return model

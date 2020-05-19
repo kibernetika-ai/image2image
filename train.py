@@ -89,7 +89,7 @@ class ImageDataset:
                     img = cv2.resize(img, (self.width, self.resize_height))
 
                     # Normalization
-                    # img = normalize(img)
+                    img = normalize(img)
                     basename = os.path.basename(img_path)
                     landmark = np.array(landmarks[basename]).astype(np.float32)
 
@@ -174,7 +174,7 @@ def main():
         tf.config.experimental.set_memory_growth(gpu, True)
         print("=" * 50)
 
-    model = model_def.build_model()
+    model = model_def.build_model(image_shape=(h, w))
     # print(model.summary())
 
     model.compile(
