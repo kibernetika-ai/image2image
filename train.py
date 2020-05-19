@@ -17,7 +17,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--batch-size', type=int, default=1)
-    parser.add_argument('--lr', type=float, default=0.05)
+    parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--mode', default='train')
     parser.add_argument('--export', action='store_true')
     parser.add_argument('--model-dir', default='train')
@@ -189,7 +189,7 @@ def main():
         scheduler = Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
         model.fit(
             x=dataset.get_input_fn(),
-            validation_data=dataset.get_val_input_fn(),
+            # validation_data=dataset.get_val_input_fn(),
             # batch_size=args.batch_size,
             epochs=args.epochs,
             verbose=1 if sys.stdout.isatty() else 2,
