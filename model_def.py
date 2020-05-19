@@ -2,12 +2,13 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
-def build_model(image_num=10):
+def build_model():
     # Build U-Net model
-    inputs = layers.Input((None, None, 3 * image_num))
+    picture = layers.Input((None, None, 3))
+    landmarks = layers.Input((68, 2))
     # s = layers.Lambda(lambda x: x / 255)(inputs)
 
-    c1 = layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(inputs)
+    c1 = layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(picture)
     c1 = layers.BatchNormalization()(c1)
     c1 = layers.Dropout(0.1)(c1)
     c1 = layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c1)
@@ -75,5 +76,5 @@ def build_model(image_num=10):
 
     # outputs = layers.Dense(3, activation='sigmoid', kernel_initializer='he_normal')(c9)
     outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
-    model = tf.keras.Model(inputs=[inputs], outputs=[outputs])
+    model = tf.keras.Model(inputs=[picture, landmarks], outputs=[outputs])
     return model

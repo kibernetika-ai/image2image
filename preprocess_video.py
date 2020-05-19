@@ -94,6 +94,11 @@ def get_landmarks(model, frame, box):
     return shape
 
 
+def draw_points(img, points, color=(0, 0, 250)):
+    for x, y in points:
+        cv2.circle(img, (int(x), int(y)), 3, color, cv2.FILLED, cv2.LINE_AA)
+
+
 def load_models(face_path, shape_path):
     drv = driver.load_driver('openvino')
     face_driver = drv()
@@ -141,7 +146,6 @@ def main():
             continue
 
         box = face_boxes[0]
-        landmarks = get_landmarks(landmarks_driver, frame, box)
 
         w = box[2] - box[0]
         h = box[3] - box[1]
@@ -160,9 +164,19 @@ def main():
             min(new_box[2] - box[0], cropped_frame.shape[1]),
             min(new_box[3] - box[1], cropped_frame.shape[0]),
         ]
+        landmarks = get_landmarks(landmarks_driver, cropped_frame, np.array(new_box)).astype(float)
+        # draw_points(cropped_frame, landmarks)
+        # cv2.imshow('img', cropped_frame)
+        # k = cv2.waitKey(0)
+        # if k == 27:
+        #     break
 
-        boxes[f'{frame_num:05d}.jpg'] = [new_box]
-        all_landmarks[f'{frame_num:05d}.jpg'] = [landmarks.tolist()]
+        # Get relative coords
+        landmarks[:, 0] = landmarks[:, 0] / cropped_frame.shape[1]
+        landmarks[:, 1] = landmarks[:, 1] / cropped_frame.shape[0]
+
+        boxes[f'{frame_num:05d}.jpg'] = new_box
+        all_landmarks[f'{frame_num:05d}.jpg'] = landmarks.tolist()
 
         if (frame_num + 1) % 100 == 0:
             LOG.info(f'Processed {frame_num+1} frames.')

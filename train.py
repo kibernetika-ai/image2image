@@ -1,4 +1,6 @@
 import argparse
+import glob
+import json
 import os
 import random
 import sys
@@ -23,7 +25,7 @@ def parse_args():
     parser.add_argument('--data-dir')
     parser.add_argument('--steps', type=int, default=1000)
     parser.add_argument('--epochs', type=int, default=5)
-    parser.add_argument('--resolution', default="1280x720")
+    parser.add_argument('--resolution', default="320x320")
     parser.add_argument('--loss', default="mae")
 
     return parser.parse_args()
@@ -37,9 +39,9 @@ def parse_resolution(res):
     return int(splitted[0]), int(splitted[1])
 
 
-class VideoDataset:
+class ImageDataset:
     def __init__(self, data_dir, batch_size=1,
-                 img_num=10, width=1280, height=720, shuffle=True, val_split=0.1):
+                 img_num=10, width=320, height=320, shuffle=True, val_split=0.0):
         self.batch_size = batch_size
 
         # structure: {root}/{video_id}/{XXXXX}.jpg
@@ -67,42 +69,40 @@ class VideoDataset:
                 random.shuffle(target_list)
 
             for video_dir in target_list:
-                start, end = 1, self.img_num
-                image_batch = []
-                while True:
-                    lossless_path = os.path.join(video_dir, f'lossless-{end}.png')
-                    if not os.path.exists(lossless_path):
-                        break
-                    lossless_img = cv2.imread(lossless_path)
-                    lossless_img = cv2.cvtColor(lossless_img, cv2.COLOR_BGR2RGB)
-                    lossless_img = cv2.resize(lossless_img, (self.width, self.resize_height))
-                    for i in range(start, end+1):
-                        path = os.path.join(video_dir, f'{i:02d}.jpg')
-                        img = cv2.imread(path)
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        img = cv2.resize(img, (self.width, self.resize_height))
-                        image_batch.append(img)
+                # load boxes.json
+                # with open(os.path.join(video_dir, 'boxes.json')) as f:
+                #     boxes = json.loads(f.read())
+                # load landmarks.json
+                with open(os.path.join(video_dir, 'landmarks.json')) as f:
+                    landmarks = json.loads(f.read())
 
-                    imgs = np.concatenate(image_batch, axis=-1)
-                    # imgs = np.stack(image_batch)
+                img_paths = glob.glob(os.path.join(video_dir, '*.jpg'))
+                reference = cv2.imread(img_paths[0], cv2.IMREAD_COLOR)
+                reference = cv2.cvtColor(reference, cv2.COLOR_BGR2RGB)
+                reference = cv2.resize(reference, (self.width, self.resize_height))
+                reference = normalize(reference)
+
+                img_paths = img_paths[1:]
+                for img_path in img_paths:
+                    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    img = cv2.resize(img, (self.width, self.resize_height))
 
                     # Normalization
-                    imgs = normalize(imgs)
-                    lossless_img = normalize(lossless_img)
+                    # img = normalize(img)
+                    basename = os.path.basename(img_path)
+                    landmark = np.array(landmarks[basename]).astype(np.float32)
 
-                    yield imgs, lossless_img
-                    start += self.img_num
-                    end += self.img_num
-                    image_batch = []
+                    yield (reference, landmark), img
         return generate_batches
 
     def _get_ds_from_list(self, dir_list):
         dataset = tf.data.Dataset.from_generator(
             self.get_generator(dir_list),
-            (tf.float32, tf.float32),
+            ((tf.float32, tf.float32), tf.float32),
             (
-                tf.TensorShape([self.height, self.width, 3 * self.img_num]),
-                tf.TensorShape([self.height, self.width, 3])
+                (tf.TensorShape([None, None, 3]), tf.TensorShape([68, 2])),
+                tf.TensorShape([None, None, 3])
             )
         )
         return dataset.batch(self.batch_size).prefetch(self.batch_size * 2)
@@ -152,7 +152,20 @@ class Scheduler:
 def main():
     args = parse_args()
     w, h = parse_resolution(args.resolution)
-    dataset = VideoDataset(args.data_dir, args.batch_size, width=w, height=h)
+    dataset = ImageDataset(args.data_dir, args.batch_size, width=w, height=h)
+
+    # inp = dataset.get_input_fn()
+    # it = inp.as_numpy_iterator()
+    # for i in it:
+    #     (_, landmarks), img = i
+    #     imgn = img[0].astype(np.uint8)
+    #     for x, y in landmarks[0]:
+    #         cv2.circle(imgn, (int(x * imgn.shape[1]), int(y * imgn.shape[0])), 2, (0, 250, 0), thickness=2)
+    #     cv2.imshow('img', imgn)
+    #     k = cv2.waitKey(0)
+    #     if k == 27:
+    #         break
+    # return
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
