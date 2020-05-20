@@ -122,13 +122,19 @@ def crop_by_boxes(img, boxes):
 
 
 def crop_by_box(img, box, margin=0):
+    crop_box = get_crop_box(img, box, margin)
+    xmin, ymin, xmax, ymax = crop_box[0:4]
+    return img[ymin:ymax, xmin:xmax]
+
+
+def get_crop_box(img, box, margin=0):
     h = (box[3] - box[1])
     w = (box[2] - box[0])
     ymin = int(max([box[1] - h * margin, 0]))
     ymax = int(min([box[3] + h * margin, img.shape[0]]))
     xmin = int(max([box[0] - w * margin, 0]))
     xmax = int(min([box[2] + w * margin, img.shape[1]]))
-    return img[ymin:ymax, xmin:xmax]
+    return np.array([xmin, ymin, xmax, ymax])
 
 
 def shape_to_np(shape, dtype="int"):
@@ -151,3 +157,7 @@ def get_landmarks(model, frame, box):
     shape = shape_to_np(shape)
 
     return shape
+
+
+def load_shape_model(shape_path):
+    return dlib.shape_predictor(shape_path)

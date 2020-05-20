@@ -189,12 +189,6 @@ def main():
                 # ),
             ]
         )
-        # validation.evaluate(
-        #     model,
-        #     dataset.get_query_input_fn(),
-        #     dataset.get_test_input_fn(),
-        #     dist_metric='euclidean',
-        # )
         model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf')
         print(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
 
