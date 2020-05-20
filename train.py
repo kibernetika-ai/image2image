@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 import tqdm
 
+import common
 import model_def
 
 
@@ -25,7 +26,7 @@ def parse_args():
     parser.add_argument('--data-dir')
     parser.add_argument('--steps', type=int, default=1000)
     parser.add_argument('--epochs', type=int, default=5)
-    parser.add_argument('--resolution', default="320x320")
+    parser.add_argument('--resolution', default="256x256")
     parser.add_argument('--loss', default="mae")
 
     return parser.parse_args()
@@ -80,7 +81,7 @@ class ImageDataset:
                 reference = cv2.imread(img_paths[0], cv2.IMREAD_COLOR)
                 reference = cv2.cvtColor(reference, cv2.COLOR_BGR2RGB)
                 reference = cv2.resize(reference, (self.width, self.resize_height))
-                reference = normalize(reference)
+                reference = common.normalize(reference)
 
                 img_paths = img_paths[1:]
                 for img_path in img_paths:
@@ -89,11 +90,12 @@ class ImageDataset:
                     img = cv2.resize(img, (self.width, self.resize_height))
 
                     # Normalization
-                    img = normalize(img)
+                    img = common.normalize(img)
                     basename = os.path.basename(img_path)
                     landmark = np.array(landmarks[basename]).astype(np.float32)
+                    landmark_img = common.landmarks_to_img(landmark, img.shape)
 
-                    yield (reference, landmark), img
+                    yield (reference, landmark_img), img
         return generate_batches
 
     def _get_ds_from_list(self, dir_list):
@@ -101,7 +103,7 @@ class ImageDataset:
             self.get_generator(dir_list),
             ((tf.float32, tf.float32), tf.float32),
             (
-                (tf.TensorShape([None, None, 3]), tf.TensorShape([68, 2])),
+                (tf.TensorShape([None, None, 3]), tf.TensorShape([None, None, 3])),
                 tf.TensorShape([None, None, 3])
             )
         )
@@ -116,21 +118,6 @@ class ImageDataset:
 
 mean = np.array([0.485, 0.456, 0.406]).reshape([1, 1, 3])
 std = np.array([0.229, 0.224, 0.225]).reshape([1, 1, 3])
-
-
-def normalize(img):
-    rank = len(img.shape)
-    height_dim = 1 if rank == 4 else 0
-    nearest_multiple_16 = img.shape[height_dim] // 16 * 16
-    if nearest_multiple_16 != img.shape[height_dim]:
-        # crop by height
-        crop_need = img.shape[height_dim] - nearest_multiple_16
-        if rank == 4:
-            img = img[:, crop_need // 2:-crop_need // 2, :, :]
-        else:
-            img = img[crop_need // 2:-crop_need // 2, :, :]
-
-    return img.astype(np.float32) / 255.0
 
 
 class Scheduler:
