@@ -42,7 +42,7 @@ def parse_resolution(res):
 
 class ImageDataset:
     def __init__(self, data_dir, batch_size=1,
-                 img_num=10, width=320, height=320, shuffle=True, val_split=0.0):
+                 img_num=10, width=256, height=256, shuffle=True, val_split=0.0):
         self.batch_size = batch_size
 
         # structure: {root}/{video_id}/{XXXXX}.jpg

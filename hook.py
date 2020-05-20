@@ -8,7 +8,7 @@ import common
 PARAMS = {
     'landmark_model': '',
     'reference': '',
-    'margin': 0.2,
+    'margin': 0.03,
 }
 
 
