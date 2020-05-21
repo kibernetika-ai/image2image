@@ -1,6 +1,7 @@
 import argparse
 import glob
 import json
+import logging
 import os
 import random
 import sys
@@ -12,6 +13,9 @@ import tqdm
 
 import common
 import model_def
+
+
+LOG = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -146,6 +150,11 @@ class Scheduler:
 
 def main():
     args = parse_args()
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)-5s %(name)-10s [-] %(message)s',
+        level='INFO'
+    )
+    logging.root.setLevel(logging.INFO)
     w, h = parse_resolution(args.resolution)
     dataset = ImageDataset(args.data_dir, args.batch_size, width=w, height=h)
 
@@ -163,13 +172,13 @@ def main():
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
-        print("=" * 50)
-        print(f"Set memory growth to {gpu}")
+        LOG.info("=" * 50)
+        LOG.info(f"Set memory growth to {gpu}")
         tf.config.experimental.set_memory_growth(gpu, True)
-        print("=" * 50)
+        LOG.info("=" * 50)
 
     model = model_def.build_model(image_shape=(h, w))
-    # print(model.summary())
+    # LOG.info(model.summary())
 
     model.compile(
         optimizer=tf.keras.optimizers.Adam(amsgrad=True),
@@ -214,7 +223,7 @@ def main():
             ]
         )
         model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf')
-        print(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
+        LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
 
     if mode == 'validate':
         m = tf.keras.models.load_model(os.path.join(args.model_dir, 'checkpoint'))
@@ -230,7 +239,7 @@ def main():
         model.outputs = model.outputs[::-1]
         model.output_names = model.output_names[::-1]
         model.save(args.output, save_format='tf')
-        print(f'Saved to {args.output}')
+        LOG.info(f'Saved to {args.output}')
 
     # config_proto = tf.compat.v1.ConfigProto(log_device_placement=True)
     # config = tf.estimator.RunConfig(
@@ -256,7 +265,7 @@ def main():
     #     saved_path = estimator_model.export_saved_model(
     #         args.model_dir,
     #     )
-    #     print(f'Saved to {saved_path}.')
+    #     LOG.info(f'Saved to {saved_path}.')
 
 
 if __name__ == '__main__':
