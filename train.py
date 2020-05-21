@@ -190,37 +190,42 @@ def main():
 
     if mode == 'train':
         scheduler = Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
-        file_writer_cm = tf.summary.create_file_writer(os.path.join(args.model_dir) + '/images')
+        file_writer_cm = tf.summary.create_file_writer(args.model_dir)
         (test_image, test_landmark), test_result = dataset.get_test_batch()
         test_image = np.expand_dims(test_image, axis=0)
         test_landmark = np.expand_dims(test_landmark, axis=0)
 
-        def log_image(epoch, logs):
+        def log_image(batch, logs):
             # Use the model to predict the values from the validation dataset.
+            if batch % 100 != 0:
+                return
+
             test_pred = model.predict_on_batch((test_image, test_landmark))
 
             # Log the confusion matrix as an image summary.
             with file_writer_cm.as_default():
-                tf.summary.image("Result", test_pred, step=epoch)
+                tf.summary.image("Result", test_pred, step=batch)
 
+        callbacks = [
+            tf.keras.callbacks.LambdaCallback(on_batch_end=log_image),
+            tf.keras.callbacks.TensorBoard(
+                log_dir=os.path.join(args.model_dir),
+                update_freq=50, write_images=True
+            ),
+        ]
+        if args.lr_scheduler:
+            callbacks.append(tf.keras.callbacks.LearningRateScheduler(scheduler.schedule, verbose=1))
         model.fit(
             x=dataset.get_input_fn(),
             # validation_data=dataset.get_val_input_fn(),
             # batch_size=args.batch_size,
             epochs=args.epochs,
             verbose=1 if sys.stdout.isatty() else 2,
-            callbacks=[
-                # tf.keras.callbacks.LearningRateScheduler(scheduler.schedule, verbose=1),
-                tf.keras.callbacks.LambdaCallback(on_epoch_end=log_image),
-                tf.keras.callbacks.TensorBoard(
-                    log_dir=os.path.join(args.model_dir, 'metrics'),
-                    update_freq=30, write_images=True
-                ),
-                # tf.keras.callbacks.ModelCheckpoint(
-                #     os.path.join(args.model_dir, 'checkpoint'),
-                #     verbose=1,
-                # ),
-            ]
+            callbacks=callbacks,
+            # tf.keras.callbacks.ModelCheckpoint(
+            #     os.path.join(args.model_dir, 'checkpoint'),
+            #     verbose=1,
+            # ),
         )
         model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf')
         LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')

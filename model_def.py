@@ -3,7 +3,7 @@ from tensorflow.keras import layers
 from tensorflow.python.keras.applications import resnet
 
 
-def build_model(image_shape=(256, 256)):
+def build_model(image_shape=(256, 256), renset_blocks=2, resnet_filters=64):
     # Build U-Net model
     picture = layers.Input((image_shape[0], image_shape[1], 3))
     landmarks = layers.Input((image_shape[0], image_shape[1], 3))
@@ -78,7 +78,7 @@ def build_model(image_shape=(256, 256)):
     # outputs = layers.Dense(3, activation='sigmoid', kernel_initializer='he_normal')(c9)
     # outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
     # pre_outputs = layers.concatenate([c9, picture])
-    details = resnet.stack1(picture, filters=32, blocks=1, stride1=1, name='resnet')
+    details = resnet.stack1(picture, filters=resnet_filters, blocks=renset_blocks, stride1=1, name='resnet')
     # details = resnet.block1(picture, filters=32, name='resnet')
     c10 = layers.concatenate([details, c9])
 
