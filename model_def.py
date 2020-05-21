@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.python.keras.applications import resnet
 
 
 def build_model(image_shape=(256, 256)):
@@ -77,8 +78,12 @@ def build_model(image_shape=(256, 256)):
     # outputs = layers.Dense(3, activation='sigmoid', kernel_initializer='he_normal')(c9)
     # outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
     # pre_outputs = layers.concatenate([c9, picture])
-    c10 = layers.Conv2D(32, (1, 1), strides=(1, 1))(c9)
-    outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='relu')(c10)
-    outputs = tf.clip_by_value(outputs, 0.0, 1.0)
+    details = resnet.stack1(picture, filters=32, blocks=1, stride1=1, name='resnet')
+    # details = resnet.block1(picture, filters=32, name='resnet')
+    c10 = layers.concatenate([details, c9])
+
+    # c10 = layers.Conv2D(32, (1, 1), strides=(1, 1))(c10)
+    outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c10)
+    # outputs = tf.clip_by_value(outputs, 0.0, 1.0)
     model = tf.keras.Model(inputs=[picture, landmarks], outputs=[outputs])
     return model

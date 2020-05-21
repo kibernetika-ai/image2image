@@ -202,11 +202,11 @@ def main():
             verbose=1 if sys.stdout.isatty() else 2,
             callbacks=[
                 # tf.keras.callbacks.LearningRateScheduler(scheduler.schedule, verbose=1),
+                tf.keras.callbacks.LambdaCallback(on_epoch_end=log_image),
                 tf.keras.callbacks.TensorBoard(
                     log_dir=os.path.join(args.model_dir, 'metrics'),
                     update_freq=30, write_images=True
                 ),
-                tf.keras.callbacks.LambdaCallback(on_epoch_end=log_image),
                 # tf.keras.callbacks.ModelCheckpoint(
                 #     os.path.join(args.model_dir, 'checkpoint'),
                 #     verbose=1,

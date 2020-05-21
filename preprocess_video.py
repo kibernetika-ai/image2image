@@ -62,7 +62,7 @@ def main():
 
     vc = cv2.VideoCapture(args.input)
     frame_num = -1
-    cropped_ratio = 0.03
+    cropped_ratio = 0.05
     boxes = {}
     all_landmarks = {}
     while True:
