@@ -149,6 +149,43 @@ class Scheduler:
             return self.learning_rate / 250
 
 
+class LogImageCallback(tf.keras.callbacks.Callback):
+    def __init__(self, model_dir, test_image, test_landmark):
+        super(LogImageCallback, self).__init__()
+        self.epoch = 0
+        self._lock_batches = False
+        self.batches = 0
+        self.model_dir = model_dir
+        self.test_image = test_image
+        self.test_landmark = test_landmark
+        self.writer = tf.summary.create_file_writer(os.path.join(self.model_dir, 'train/im'), name='image')
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.epoch += 1
+        self._lock_batches = True
+
+    def on_batch_end(self, batch, logs=None):
+        # Use the model to predict the values from the validation dataset.
+        if not self._lock_batches:
+            self.batches += 1
+            return
+        current_batch = batch
+        if self._lock_batches:
+            current_batch += self.epoch * self.batches
+
+        if current_batch % 1000 != 0:
+            return
+
+        # LOG.info('LOG_IMAGE!' + str(current_batch))
+        test_pred = self.model.predict_on_batch((self.test_image, self.test_landmark))
+
+        # Log the confusion matrix as an image summary.
+        self.writer.init()
+        with self.writer.as_default():
+            written = tf.summary.image("Result", test_pred, step=current_batch)
+            # LOG.info(written)
+
+
 def main():
     args = parse_args()
     logging.basicConfig(
@@ -191,21 +228,12 @@ def main():
 
     if mode == 'train':
         scheduler = Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
-        file_writer_cm = tf.summary.create_file_writer(args.model_dir)
         (test_image, test_landmark), test_result = dataset.get_test_batch()
         test_image = np.expand_dims(test_image, axis=0)
         test_landmark = np.expand_dims(test_landmark, axis=0)
 
-        def log_image(epoch, logs):
-            # Use the model to predict the values from the validation dataset.
-            test_pred = model.predict_on_batch((test_image, test_landmark))
-
-            # Log the confusion matrix as an image summary.
-            with file_writer_cm.as_default():
-                tf.summary.image("Result", test_pred, step=epoch)
-
         callbacks = [
-            tf.keras.callbacks.LambdaCallback(on_epoch_end=log_image),
+            LogImageCallback(args.model_dir, test_image, test_landmark),
             tf.keras.callbacks.TensorBoard(
                 log_dir=os.path.join(args.model_dir),
                 update_freq=50, write_images=True
