@@ -205,7 +205,7 @@ def main():
 
             # Log the confusion matrix as an image summary.
             with file_writer_cm.as_default():
-                tf.summary.image("Result", test_pred, step=batch)
+                tf.summary.image("Result", test_pred)
 
         callbacks = [
             tf.keras.callbacks.LambdaCallback(on_batch_end=log_image),
