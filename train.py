@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument('--steps', type=int, default=1000)
     parser.add_argument('--epochs', type=int, default=5)
     parser.add_argument('--resolution', default="256x256")
-    parser.add_argument('--loss', default="mae")
+    parser.add_argument('--loss', default="mse")
 
     return parser.parse_args()
 
