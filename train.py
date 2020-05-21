@@ -77,13 +77,16 @@ class ImageDataset:
                 with open(os.path.join(video_dir, 'landmarks.json')) as f:
                     landmarks = json.loads(f.read())
 
-                img_paths = glob.glob(os.path.join(video_dir, '*.jpg'))
+                img_paths = sorted(glob.glob(os.path.join(video_dir, '*.jpg')))
                 reference = cv2.imread(img_paths[0], cv2.IMREAD_COLOR)
                 reference = cv2.cvtColor(reference, cv2.COLOR_BGR2RGB)
                 reference = cv2.resize(reference, (self.width, self.resize_height))
                 reference = common.normalize(reference)
 
                 img_paths = img_paths[1:]
+                if self.shuffle:
+                    random.shuffle(img_paths)
+
                 for img_path in img_paths:
                     img = cv2.imread(img_path, cv2.IMREAD_COLOR)
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -111,6 +114,11 @@ class ImageDataset:
 
     def get_input_fn(self):
         return self._get_ds_from_list(self.train_dirs)
+
+    def get_test_batch(self):
+        gen = self.get_generator(self.train_dirs)
+        for i in gen():
+            return i
 
     def get_val_input_fn(self):
         return self._get_ds_from_list(self.val_dirs)
@@ -145,10 +153,9 @@ def main():
     # it = inp.as_numpy_iterator()
     # for i in it:
     #     (_, landmarks), img = i
-    #     imgn = img[0].astype(np.uint8)
-    #     for x, y in landmarks[0]:
-    #         cv2.circle(imgn, (int(x * imgn.shape[1]), int(y * imgn.shape[0])), 2, (0, 250, 0), thickness=2)
-    #     cv2.imshow('img', imgn)
+    #     l_img = landmarks[0]
+    #     l_img = (l_img * 255.0).astype(np.uint8).clip(0, 255)
+    #     cv2.imshow('img', l_img)
     #     k = cv2.waitKey(0)
     #     if k == 27:
     #         break
@@ -174,6 +181,19 @@ def main():
 
     if mode == 'train':
         scheduler = Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
+        file_writer_cm = tf.summary.create_file_writer(os.path.join(args.model_dir) + '/images')
+        (test_image, test_landmark), test_result = dataset.get_test_batch()
+        test_image = np.expand_dims(test_image, axis=0)
+        test_landmark = np.expand_dims(test_landmark, axis=0)
+
+        def log_image(epoch, logs):
+            # Use the model to predict the values from the validation dataset.
+            test_pred = model.predict_on_batch((test_image, test_landmark))
+
+            # Log the confusion matrix as an image summary.
+            with file_writer_cm.as_default():
+                tf.summary.image("Result", test_pred, step=epoch)
+
         model.fit(
             x=dataset.get_input_fn(),
             # validation_data=dataset.get_val_input_fn(),
@@ -181,8 +201,12 @@ def main():
             epochs=args.epochs,
             verbose=1 if sys.stdout.isatty() else 2,
             callbacks=[
-                tf.keras.callbacks.LearningRateScheduler(scheduler.schedule, verbose=1),
-                tf.keras.callbacks.TensorBoard(log_dir=args.model_dir, update_freq=30),
+                # tf.keras.callbacks.LearningRateScheduler(scheduler.schedule, verbose=1),
+                tf.keras.callbacks.TensorBoard(
+                    log_dir=os.path.join(args.model_dir, 'metrics'),
+                    update_freq=30, write_images=True
+                ),
+                tf.keras.callbacks.LambdaCallback(on_epoch_end=log_image),
                 # tf.keras.callbacks.ModelCheckpoint(
                 #     os.path.join(args.model_dir, 'checkpoint'),
                 #     verbose=1,

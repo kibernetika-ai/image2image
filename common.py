@@ -6,7 +6,7 @@ from scipy import interpolate
 
 def landmarks_to_img(landmarks, img_shape):
     landmarks *= [img_shape[1], img_shape[0]]
-    canvas = np.zeros(img_shape, dtype=np.float32)
+    canvas = np.ones(img_shape, dtype=np.float32) * 255
     draw_line_segments(canvas, landmarks, interpolation=False)
 
     return normalize(canvas)
@@ -36,11 +36,13 @@ def draw_line_segments(img, points, interpolation=False, color=None):
     colors = [
         (255, 0, 0),
         (0, 255, 0),
+        (0, 255, 0),
         (0, 0, 255),
-        (255, 255, 0),
+        (0, 0, 255),
         (255, 0, 255),
-        (0, 255, 255),
-        (255, 255, 255),
+        (255, 0, 255),
+        (255, 255, 0),
+        (255, 255, 0),
         (127, 0, 0),
         (0, 127, 0),
         (0, 0, 127),
@@ -50,28 +52,31 @@ def draw_line_segments(img, points, interpolation=False, color=None):
     chin = points[0:17]
     left_brow = points[17:22]
     right_brow = points[22:27]
-    nose1 = points[27:31]
-    nose1 = np.concatenate((nose1, [points[33]]))
-    nose2 = points[31:36]
     left_eye = points[36:42]
     left_eye = np.concatenate((left_eye, [points[36]]))
     right_eye = points[42:48]
     right_eye = np.concatenate((right_eye, [points[42]]))
+    nose1 = points[27:31]
+    nose1 = np.concatenate((nose1, [points[33]]))
+    nose2 = points[31:36]
     mouth = points[48:60]
     mouth = np.concatenate((mouth, [points[48]]))
     mouth_internal = points[60:68]
     mouth_internal = np.concatenate((mouth_internal, [points[60]]))
     lines = np.array([
         chin, left_brow, right_brow,
-        nose1, nose2, left_eye,
-        right_eye, mouth, mouth_internal
+        left_eye, right_eye, nose1, nose2,
+        mouth, mouth_internal
     ])
     for i, line in enumerate(lines):
         if interpolation:
-            tck, u = interpolate.splprep(line.transpose(), u=None, s=0.0, per=0)
-            u_new = np.linspace(u.min(), u.max(), 100)
-            xs, ys = interpolate.splev(u_new, tck, der=0)
-            line = np.stack([xs, ys]).transpose()
+            try:
+                tck, u = interpolate.splprep(line.transpose(), u=None, s=0.0, per=0)
+                u_new = np.linspace(u.min(), u.max(), 100)
+                xs, ys = interpolate.splev(u_new, tck, der=0)
+                line = np.stack([xs, ys]).transpose()
+            except Exception as e:
+                print(f'{e}, skip interpolation')
         cur_color = colors[i]
         if color:
             cur_color = color

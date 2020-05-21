@@ -77,6 +77,8 @@ def build_model(image_shape=(256, 256)):
     # outputs = layers.Dense(3, activation='sigmoid', kernel_initializer='he_normal')(c9)
     # outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
     # pre_outputs = layers.concatenate([c9, picture])
-    outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c9)
+    c10 = layers.Conv2D(32, (1, 1), strides=(1, 1))(c9)
+    outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='relu')(c10)
+    outputs = tf.clip_by_value(outputs, 0.0, 1.0)
     model = tf.keras.Model(inputs=[picture, landmarks], outputs=[outputs])
     return model

@@ -67,6 +67,9 @@ def process(inputs, ctx, **kwargs):
         output = cv2.resize(output, (cropped.shape[1], cropped.shape[0]), interpolation=cv2.INTER_AREA)
 
         image[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]] = output
+        # mixed_mask = np.ones_like(image) * 255
+        # center_box = [(crop_box[0] + crop_box[2]) // 2, (crop_box[1] + crop_box[3]) // 2]
+        # image = cv2.seamlessClone(output, image, mixed_mask, center_box, cv2.NORMAL_CLONE)
         # cv2.seamlessClone(output, image, )
 
     if is_video:
