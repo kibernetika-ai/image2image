@@ -23,6 +23,7 @@ def parse_args():
 
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--lr-scheduler', action='store_true')
     parser.add_argument('--mode', default='train')
     parser.add_argument('--export', action='store_true')
     parser.add_argument('--model-dir', default='train')
