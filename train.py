@@ -196,19 +196,16 @@ def main():
         test_image = np.expand_dims(test_image, axis=0)
         test_landmark = np.expand_dims(test_landmark, axis=0)
 
-        def log_image(batch, logs):
+        def log_image(epoch, logs):
             # Use the model to predict the values from the validation dataset.
-            if batch % 100 != 0:
-                return
-
             test_pred = model.predict_on_batch((test_image, test_landmark))
 
             # Log the confusion matrix as an image summary.
             with file_writer_cm.as_default():
-                tf.summary.image("Result", test_pred)
+                tf.summary.image("Result", test_pred, step=epoch)
 
         callbacks = [
-            tf.keras.callbacks.LambdaCallback(on_batch_end=log_image),
+            tf.keras.callbacks.LambdaCallback(on_epoch_end=log_image),
             tf.keras.callbacks.TensorBoard(
                 log_dir=os.path.join(args.model_dir),
                 update_freq=50, write_images=True
