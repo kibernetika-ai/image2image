@@ -82,7 +82,7 @@ def build_model(image_shape=(256, 256)):
     # details = resnet.block1(picture, filters=32, name='resnet')
     c10 = layers.concatenate([details, c9])
 
-    # c10 = layers.Conv2D(32, (1, 1), strides=(1, 1))(c10)
+    c10 = layers.Conv2D(32, (1, 1), strides=(1, 1))(c10)
     outputs = layers.Conv2D(3, (1, 1), strides=(1, 1), activation='sigmoid')(c10)
     # outputs = tf.clip_by_value(outputs, 0.0, 1.0)
     model = tf.keras.Model(inputs=[picture, landmarks], outputs=[outputs])
