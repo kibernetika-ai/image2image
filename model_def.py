@@ -5,8 +5,8 @@ from tensorflow.python.keras.applications import resnet
 
 def build_model(image_shape=(256, 256), renset_blocks=2, resnet_filters=64):
     # Build U-Net model
-    picture = layers.Input((image_shape[0], image_shape[1], 3))
-    landmarks = layers.Input((image_shape[0], image_shape[1], 3))
+    picture = layers.Input((None, None, 3))
+    landmarks = layers.Input((None, None, 3))
 
     inputs = layers.concatenate([picture, landmarks])
     c1 = layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(inputs)

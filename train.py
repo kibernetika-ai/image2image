@@ -253,7 +253,7 @@ def main():
             #     verbose=1,
             # ),
         )
-        model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf')
+        model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf', include_optimizer=False)
         LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
 
     if mode == 'validate':
@@ -269,7 +269,7 @@ def main():
         model.load_weights(os.path.join(args.model_dir, 'checkpoint'))
         model.outputs = model.outputs[::-1]
         model.output_names = model.output_names[::-1]
-        model.save(args.output, save_format='tf')
+        model.save(args.output, save_format='tf', include_optimizer=False)
         LOG.info(f'Saved to {args.output}')
 
     # config_proto = tf.compat.v1.ConfigProto(log_device_placement=True)

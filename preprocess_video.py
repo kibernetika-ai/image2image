@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument('--face-model')
     parser.add_argument('--landmarks-model')
     parser.add_argument('--input')
+    parser.add_argument('--margin', type=float, help='Margin value of cropped faces', default=0.05)
     parser.add_argument('--output', default='output')
 
     return parser.parse_args()
@@ -62,7 +63,7 @@ def main():
 
     vc = cv2.VideoCapture(args.input)
     frame_num = -1
-    cropped_ratio = 0.05
+    margin = args.margin
     boxes = {}
     all_landmarks = {}
     while True:
@@ -78,17 +79,11 @@ def main():
 
         box = face_boxes[0]
 
-        w = box[2] - box[0]
-        h = box[3] - box[1]
-        new_box = [
-            int(max(round(box[0] - cropped_ratio * w), 0)),
-            int(max(round(box[1] - cropped_ratio * h), 0)),
-            int(min(round(box[0] + w * (1.0 + cropped_ratio)), frame.shape[1])),
-            int(min(round(box[1] + h * (1.0 + cropped_ratio)), frame.shape[0])),
-        ]
+        new_box = common.get_crop_box(frame, box, margin=margin)
         file_name = os.path.join(dirname, f'{frame_num:05d}.jpg')
         cropped_frame = frame[new_box[1]:new_box[3], new_box[0]:new_box[2]]
         cv2.imwrite(file_name, cropped_frame)
+        # Re-compute cropped box coords
         new_box = [
             max(box[0] - new_box[0], 0),
             max(box[1] - new_box[1], 0),
