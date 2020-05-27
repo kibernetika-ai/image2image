@@ -55,6 +55,7 @@ def main():
     w, h = train.parse_resolution(args.resolution)
     k = 8
     dataset = train.ImageDataset(args.data_dir, args.batch_size * k, width=w, height=h)
+    __import__('ipdb').set_trace()
 
     # inp = dataset.get_input_fn()
     # it = inp.as_numpy_iterator()
@@ -95,7 +96,10 @@ def main():
 
     if mode == 'train':
         loss_g = loss.LossG()
-        loss_d = loss.loss_dsc
+        # loss_d = loss.loss_dsc
+        # loss_cnt = loss.LossCnt()
+        # loss_adv = loss.LossAdv()
+        # loss_match = loss.LossMatch()
         scheduler = train.Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
         optimizer_g = tf.keras.optimizers.Adam(args.lr)
         optimizer_d = tf.keras.optimizers.Adam(args.lr)
@@ -109,23 +113,29 @@ def main():
                     emb = embedder(image, lmark)
                     embs[i] = emb
                 embs = tf.reshape(embs, [args.batch_size, k, 512, 1])
-                e_hat = tf.reduce_mean(embs, axis=1)
+                embedding = tf.reduce_mean(embs, axis=1)
 
-                x_hat = gen(l_landmark, e_hat)
+                # Train Generator and Discriminator
+                fake_out = gen(l_landmark, embedding)
+                # TODO: fix 0 -> to video id
 
-                real_output = discr(image, training=True)
-                fake_output = discr(generated_images, training=True)
+                score_fake, hat_res_list = discr(fake_out, l_landmark, 0)
+                score_real, res_list = discr(l_image, l_landmark, 0)
 
-                gen_loss = loss_g(fake_output)
-                disc_loss = loss_d(real_output, fake_output)
+                gen_loss = loss_g(l_image, fake_out, score_fake, res_list, hat_res_list, embs, discr.W_i, i)
+                # adv_loss = loss_adv(score_fake, res_list, hat_res_list)
+                # mch_loss = loss_match()
+                loss_dfake = loss.loss_dscfake(score_fake)
+                loss_dreal = loss.loss_dscreal(score_real)
+                d_loss = loss_dreal + loss_dfake
 
-            gradients_of_generator = gen_tape.gradient(gen_loss, gen.trainable_variables)
-            gradients_of_discriminator = disc_tape.gradient(disc_loss, discr.trainable_variables)
+            gradients_of_generator = gen_tape.gradient(gen_loss, gen.trainable_variables + embedder.trainable_variables)
+            gradients_of_discriminator = disc_tape.gradient(d_loss, discr.trainable_variables)
 
             optimizer_g.apply_gradients(zip(gradients_of_generator, gen.trainable_variables))
             optimizer_d.apply_gradients(zip(gradients_of_discriminator, discr.trainable_variables))
 
-        (test_image, test_landmark), test_result = dataset.get_test_batch()
+        (test_image, test_landmark), test_result = dataset.get_test_batch(k)
         test_image = np.expand_dims(test_image, axis=0)
         test_landmark = np.expand_dims(test_landmark, axis=0)
 
@@ -138,11 +148,15 @@ def main():
                 l_landmark = landmarks[-1]
                 step(k_images, k_landmarks, l_image, l_landmark)
 
-            # Save the model every 15 epochs
+            # Save the model every 5 epochs
             if (epoch + 1) % 5 == 0:
                 gen.save(checkpoint_dir_e)
                 discr.save(checkpoint_dir_e)
                 embedder.save(checkpoint_dir_e)
+
+            test_pred = gen(test_image, test_landmark)
+            tf.summary.image("Result", test_pred, step=current_batch)
+
         # model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf', include_optimizer=False)
         LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
 

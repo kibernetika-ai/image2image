@@ -67,11 +67,11 @@ class ImageDataset:
         self.resize_height = height
         self.height = height // 16 * 16
 
-    def get_generator(self, dir_list):
+    def get_generator(self, dir_list, shuffle=True):
         target_list = dir_list
 
         def generate_batches():
-            if self.shuffle:
+            if shuffle:
                 random.shuffle(target_list)
 
             for video_dir in target_list:
@@ -89,7 +89,7 @@ class ImageDataset:
                 reference = common.normalize(reference)
 
                 img_paths = img_paths[1:]
-                if self.shuffle:
+                if shuffle:
                     random.shuffle(img_paths)
 
                 for img_path in img_paths:
@@ -108,7 +108,7 @@ class ImageDataset:
 
     def _get_ds_from_list(self, dir_list):
         dataset = tf.data.Dataset.from_generator(
-            self.get_generator(dir_list),
+            self.get_generator(dir_list, shuffle=self.shuffle),
             ((tf.float32, tf.float32), tf.float32),
             (
                 (tf.TensorShape([None, None, 3]), tf.TensorShape([None, None, 3])),
@@ -120,10 +120,21 @@ class ImageDataset:
     def get_input_fn(self):
         return self._get_ds_from_list(self.train_dirs)
 
-    def get_test_batch(self):
-        gen = self.get_generator(self.train_dirs)
-        for i in gen():
-            return i
+    def get_test_batch(self, num):
+        gen = self.get_generator(self.train_dirs, shuffle=False)
+        refs = []
+        labels = []
+        landmarks = []
+        i = 0
+        for (ref, landmark), label in gen():
+            refs.append(ref)
+            landmarks.append(landmark)
+            labels.append(label)
+            i += 1
+            if i >= num:
+                break
+
+        return np.stack(refs), np.stack(landmarks), np.stack(labels)
 
     def get_val_input_fn(self):
         return self._get_ds_from_list(self.val_dirs)
@@ -228,9 +239,9 @@ def main():
 
     if mode == 'train':
         scheduler = Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
-        (test_image, test_landmark), test_result = dataset.get_test_batch()
-        test_image = np.expand_dims(test_image, axis=0)
-        test_landmark = np.expand_dims(test_landmark, axis=0)
+        (test_image, test_landmark), test_result = dataset.get_test_batch(1)
+        # test_image = np.expand_dims(test_image, axis=0)
+        # test_landmark = np.expand_dims(test_landmark, axis=0)
 
         callbacks = [
             LogImageCallback(args.model_dir, test_image, test_landmark),

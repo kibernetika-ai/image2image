@@ -1,16 +1,15 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-import torch
-import torch.nn as nn
-import imp
-import torchvision
-from torchvision.models import vgg19
-from model_gan.model import Cropped_VGG19
+# import torch
+# import torch.nn as nn
+# import imp
+# import torchvision
+# from torchvision.models import vgg19
+# from model_gan.model import Cropped_VGG19
 from model_gan.vggface import VGGFace
 
-
-vggface_feat_layers = ['conv1_1','conv2_1','conv3_1','conv4_1','conv5_1']
-vgg19_feat_layers = ['block1_conv1','block2_conv1','block3_conv1','block4_conv1','block5_conv1']
+vggface_feat_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
+vgg19_feat_layers = ['block1_conv1', 'block2_conv1', 'block3_conv1', 'block4_conv1', 'block5_conv1']
 
 
 def VGGFACE(input_tensor=None, input_shape=(224, 224, 3)):
@@ -110,6 +109,16 @@ class LossG(layers.Layer):
         loss_adv = self.lossAdv(r_hat, D_res_list, D_hat_res_list)
         loss_match = self.lossMatch(e_vectors, W, i)
         return loss_cnt + loss_adv + loss_match
+
+
+def loss_dscreal(r):
+    loss = tf.math.maximum(tf.zeros_like(r), 1 - r)
+    return tf.reduce_mean(loss)
+
+
+def loss_dscfake(rhat):
+    loss = tf.math.maximum(tf.zeros_like(rhat), 1 + rhat)
+    return tf.reduce_mean(loss)
 
 
 class LossGF(layers.Layer):
