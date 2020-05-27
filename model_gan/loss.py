@@ -34,6 +34,10 @@ def VGG19(input_tensor=None, input_shape=(224, 224, 3)):
     return model
 
 
+def loss_dsc(r_x, r_x_hat):
+    return tf.reduce_mean(tf.math.maximum(0.0, (1 + r_x_hat)) + tf.math.maximum(0.0, (1 - r_x)))
+
+
 class LossCnt(layers.Layer):
     def __init__(self):
         super(LossCnt, self).__init__()

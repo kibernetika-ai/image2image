@@ -5,7 +5,9 @@ import os
 
 import cv2
 import dlib
+import face_alignment
 import numpy as np
+import torch
 from ml_serving.drivers import driver
 
 import common
@@ -22,6 +24,7 @@ def parse_args():
     parser.add_argument('--input')
     parser.add_argument('--margin', type=float, help='Margin value of cropped faces', default=0.05)
     parser.add_argument('--output', default='output')
+    parser.add_argument('--type', default='dlib', choices=['dlib', 'fa'])
 
     return parser.parse_args()
 
@@ -31,12 +34,19 @@ def draw_points(img, points, color=(0, 0, 250)):
         cv2.circle(img, (int(x), int(y)), 3, color, cv2.FILLED, cv2.LINE_AA)
 
 
-def load_models(face_path, shape_path):
+def load_models(face_path, shape_path, landmark_type='dlib'):
     drv = driver.load_driver('openvino')
     face_driver = drv()
     face_driver.load_model(face_path)
 
-    landmarks_driver = load_shape_model(shape_path)
+    if landmark_type == 'dlib':
+        landmarks_driver = load_shape_model(shape_path)
+    else:
+        landmarks_driver = face_alignment.FaceAlignment(
+            face_alignment.LandmarksType._2D,
+            flip_input=False,
+            device='cuda' if torch.cuda.is_available() else 'cpu'
+        )
 
     return face_driver, landmarks_driver
 
@@ -53,7 +63,7 @@ def main():
     )
     logging.root.setLevel(logging.INFO)
 
-    face_driver, landmarks_driver = load_models(args.face_model, args.landmarks_model)
+    face_driver, landmarks_driver = load_models(args.face_model, args.landmarks_model, landmark_type=args.type)
     LOG.info('Models loaded.')
 
     basename = os.path.splitext(os.path.basename(args.input))[0]

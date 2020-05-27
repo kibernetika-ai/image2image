@@ -1,5 +1,6 @@
 import cv2
 import dlib
+import face_alignment
 import numpy as np
 from scipy import interpolate
 
@@ -157,9 +158,12 @@ def shape_to_np(shape, dtype="int"):
 
 def get_landmarks(model, frame, box):
     box = box.astype(np.int)
-    rect = dlib.rectangle(box[0], box[1], box[2], box[3])
-    shape = model(frame, rect)
-    shape = shape_to_np(shape)
+    if isinstance(model, face_alignment.FaceAlignment):
+        shape = model.get_landmarks_from_image(frame, [box])[0]
+    else:
+        rect = dlib.rectangle(box[0], box[1], box[2], box[3])
+        shape = model(frame, rect)
+        shape = shape_to_np(shape)
 
     return shape
 

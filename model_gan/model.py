@@ -29,7 +29,9 @@ class Embedder(tf.keras.Model):
         # self.sum_pooling = nn.AdaptiveMaxPool2d((1, 1))  # out 512*1*1
         self.sum_pooling = layers.GlobalMaxPool2D()
 
-    def call(self, x, y, training=None):
+    def call(self, inputs, training=None, **kwargs):
+        x = inputs[0]
+        y = inputs[1]
         out = layers.concatenate((x, y), axis=-3)  # out 6*224*224
         out = self.pad(out)  # out 6*256*256
         out = self.resDown1(out)  # out 64*128*128
@@ -121,7 +123,9 @@ class Generator(tf.keras.Model):
         if self.finetuning:
             self.psi = tf.Variable(tf.matmul(self.p, tf.reduce_mean(self.e_finetuning.mean, axis=0)))
 
-    def call(self, y, e):
+    def call(self, inputs, training=None, **kwargs):
+        y = inputs[0]
+        e = inputs[1]
         if math.isnan(self.p[0, 0]):
             sys.exit()
 
@@ -199,9 +203,8 @@ class Generator(tf.keras.Model):
 #         return self.W_i
 
 class Discriminator(tf.keras.Model):
-    def __init__(self, num_videos, finetuning=False, e_finetuning=None):
+    def __init__(self, finetuning=False, e_finetuning=None):
         super(Discriminator, self).__init__()
-        self.gpu_num = torch.cuda.device_count()
         self.relu = layers.LeakyReLU()
 
         # in 6*224*224
@@ -241,7 +244,10 @@ class Discriminator(tf.keras.Model):
     def load_W_i(self, W_i):
         self.W_i.data = self.relu(W_i)
 
-    def call(self, x, y, i):
+    def call(self, inputs, training=None, **kwargs):
+        x = inputs[0]
+        y = inputs[1]
+        i = inputs[2]
         # out = layers.concatenate([x, y], axis=-1)  # out B*6*224*224
         out = layers.concatenate([x, y], axis=-1)  # out B*224*224*6
 
