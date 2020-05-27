@@ -9,14 +9,15 @@ from tensorflow.keras import layers
 from model_gan.vggface import VGGFace
 
 vggface_feat_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
+vggface_feat_layers2 = ['block1_conv1', 'block2_conv1', 'block3_conv1', 'block4_conv1', 'block5_conv1']
 vgg19_feat_layers = ['block1_conv1', 'block2_conv1', 'block3_conv1', 'block4_conv1', 'block5_conv1']
 
 
 def VGGFACE(input_tensor=None, input_shape=(224, 224, 3)):
-    vggface = VGGFace(input_tensor=input_tensor, model='vgg16', include_top=False, input_shape=input_shape)
+    # vggface = VGGFace(input_tensor=input_tensor, model='vgg16', include_top=False, input_shape=input_shape)
     outputs = []
-    # tf.keras.applications.VGG16(input_tensor=input_tensor, model='vgg16', include_top=False, input_shape=input_shape)
-    for l in vggface_feat_layers:
+    vggface = tf.keras.applications.VGG16(input_tensor=input_tensor, include_top=False, input_shape=input_shape)
+    for l in vggface_feat_layers2:
         outputs.append(vggface.get_layer(l).output)
     model = tf.keras.Model(inputs=vggface.input, outputs=outputs)
 
@@ -38,8 +39,11 @@ def loss_dsc(r_x, r_x_hat):
 
 
 class LossCnt(layers.Layer):
-    def __init__(self):
+    def __init__(self, img_size):
         super(LossCnt, self).__init__()
+        self.img_size = img_size
+        self.loss_vgg19_wt = 1e-2
+        self.loss_vggface_wt = 2e-3
 
         self.vggface_xi = VGGFACE(
             input_tensor=None,
@@ -97,10 +101,10 @@ class LossG(layers.Layer):
     output: lossG
     """
 
-    def __init__(self):
+    def __init__(self, img_size):
         super(LossG, self).__init__()
 
-        self.LossCnt = LossCnt()
+        self.LossCnt = LossCnt(img_size)
         self.lossAdv = LossAdv()
         self.lossMatch = LossMatch()
 
@@ -128,10 +132,10 @@ class LossGF(layers.Layer):
     output: lossG
     """
 
-    def __init__(self):
+    def __init__(self, img_size):
         super(LossGF, self).__init__()
 
-        self.LossCnt = LossCnt()
+        self.LossCnt = LossCnt(img_size)
         self.lossAdv = LossAdv()
 
     def call(self, x, x_hat, r_hat, D_res_list, D_hat_res_list):

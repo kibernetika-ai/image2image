@@ -16,13 +16,13 @@ class ResBlockDown(layers.Layer):
         self.avg_pool2d = layers.AvgPool2D(2)
 
         # left
-        self.conv_l1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, 1))
+        self.conv_l1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, 1, padding='same'))
         # self.conv_l1 = nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, 1, ))
 
         # right
-        self.conv_r1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size))
+        self.conv_r1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size, padding='same'))
         # self.conv_r1 = nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, conv_size, padding=padding_size))
-        self.conv_r2 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size))
+        self.conv_r2 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size, padding='same'))
         # self.conv_r2 = nn.utils.spectral_norm(nn.Conv2d(out_channel, out_channel, conv_size, padding=padding_size))
 
     def call(self, x, **kwargs):
@@ -51,49 +51,52 @@ class SelfAttention(layers.Layer):
 
         # conv f
         # self.conv_f = nn.utils.spectral_norm(nn.Conv2d(in_channel, in_channel // 8, 1))
-        self.conv_f = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel // 8, 1))
+        self.conv_f = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel // 8, 1, padding='same'))
         # conv_g
         # self.conv_g = nn.utils.spectral_norm(nn.Conv2d(in_channel, in_channel // 8, 1))
-        self.conv_g = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel // 8, 1))
+        self.conv_g = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel // 8, 1, padding='same'))
         # conv_h
         # self.conv_h = nn.utils.spectral_norm(nn.Conv2d(in_channel, in_channel, 1))
-        self.conv_h = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel, 1))
+        self.conv_h = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel, 1, padding='same'))
 
-        self.softmax = layers.Softmax(axis=-2)  # sum in column j = 1
-        self.gamma = tf.Variable(initial_value=1)
+        self.softmax = layers.Softmax()  # sum in column j = 1
+        self.gamma = tf.Variable(initial_value=1.0)
+
+    @staticmethod
+    def hw_flatten(x):
+        _, h, w, c = x.get_shape().as_list()
+        return tf.reshape(x, shape=[-1, h * w, c])
 
     def call(self, x, **kwargs):
-        b, c, h, w = x.shape
-        f_projection = self.conv_f(x)  # BxC'xHxW, C'=C//8
-        g_projection = self.conv_g(x)  # BxC'xHxW
-        h_projection = self.conv_h(x)  # BxCxHxW
+        b, h, w, c = x.shape
+        f_projection = self.conv_f(x)  # BxHxWxC', C'=C//8
+        g_projection = self.conv_g(x)  # BxHxWxC'
+        h_projection = self.conv_h(x)  # BxHxWxC
 
-        f_projection = tf.transpose(tf.reshape(f_projection, [b, -1, h * w]), [1, 2])  # BxNxC', N=H*W
-        g_projection = tf.reshape(g_projection, [b, -1, h * w])  # BxC'xN
-        h_projection = tf.reshape(h_projection, [b, -1, h * w])  # BxCxN
+        s = tf.matmul(self.hw_flatten(g_projection), self.hw_flatten(f_projection), transpose_b=True)
 
-        attention_map = tf.matmul(f_projection, g_projection)  # BxNxN
-        attention_map = self.softmax(attention_map)  # sum_i_N (A i,j) = 1
-
+        # attention_map = tf.matmul(f_projection, g_projection)  # BxNxN
+        attention_map = self.softmax(s)  # sum_i_N (A i,j) = 1
         # sum_i_N (A i,j) = 1 hence oj = (HxAj) is a weighted sum of input columns
-        out = tf.matmul(h_projection, attention_map)  # BxCxN
-        out = tf.reshape(out, [b, c, h, w])
+        out = tf.matmul(attention_map, self.hw_flatten(h_projection))  # BxCxN
+        out = tf.reshape(out, [-1, h, w, c])
 
         out = self.gamma * out + x
         return out
 
 
 def adaIN(feature, mean_style, std_style, eps=1e-5):
-    b, c, h, w = feature.shape
+    b, h, w, c = feature.shape
 
-    feature = tf.reshape(feature, [b, c, -1])
+    feature = tf.reshape(feature, [b, -1, c])
 
-    std_feat = tf.reshape(tf.math.reduce_std(feature, axis=2) + eps, [b, c, 1])
-    mean_feat = tf.reshape(tf.reduce_mean(feature, axis=2), [b, c, 1])
+    std_feat = tf.reshape(tf.math.reduce_std(feature, axis=1) + eps, [b, 1, c])
+    mean_feat = tf.reshape(tf.reduce_mean(feature, axis=1), [b, 1, c])
 
     adain = std_style * (feature - mean_feat) / std_feat + mean_style
 
-    adain = tf.reshape(adain, [b, c, h, w])
+    print(adain.shape)
+    adain = tf.reshape(adain, [b, h, w, c])
     return adain
 
 
@@ -163,12 +166,7 @@ class ResBlockUp(layers.Layer):
         self.in_channel = in_channel
         self.out_channel = out_channel
 
-        if is_bilinear:
-            # self.upsample = nn.Upsample(size=out_size, scale_factor=scale, mode='bilinear')
-            self.upsample = layers.UpSampling2D(size=scale, interpolation='bilinear')
-        else:
-            # self.upsample = nn.Upsample(size=out_size, scale_factor=scale)
-            self.upsample = layers.UpSampling2D(size=scale)
+        self.upsample = layers.Conv2DTranspose(in_channel, 3, scale)
         self.relu = layers.LeakyReLU()
 
         # left

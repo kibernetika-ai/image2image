@@ -54,8 +54,7 @@ def main():
     logging.root.setLevel(logging.INFO)
     w, h = train.parse_resolution(args.resolution)
     k = 8
-    dataset = train.ImageDataset(args.data_dir, args.batch_size * k, width=w, height=h)
-    __import__('ipdb').set_trace()
+    dataset = train.ImageDataset(args.data_dir, args.batch_size * (k + 1), width=w, height=h)
 
     # inp = dataset.get_input_fn()
     # it = inp.as_numpy_iterator()
@@ -76,9 +75,9 @@ def main():
         tf.config.experimental.set_memory_growth(gpu, True)
         LOG.info("=" * 50)
 
-    gen = model_.Generator(h)
+    embedder = model_.Embedder(h).build()
     discr = model_.Discriminator()
-    embedder = model_.Embedder(h)
+    gen = model_.Generator(h)
     checkpoint_dir_g = os.path.join(args.model_dir, 'checkpoint_g')
     checkpoint_dir_d = os.path.join(args.model_dir, 'checkpoint_d')
     checkpoint_dir_e = os.path.join(args.model_dir, 'checkpoint_e')
@@ -95,7 +94,7 @@ def main():
     mode = args.mode
 
     if mode == 'train':
-        loss_g = loss.LossG()
+        loss_g = loss.LossG(img_size=[h, w, 3])
         # loss_d = loss.loss_dsc
         # loss_cnt = loss.LossCnt()
         # loss_adv = loss.LossAdv()
@@ -104,14 +103,15 @@ def main():
         optimizer_g = tf.keras.optimizers.Adam(args.lr)
         optimizer_d = tf.keras.optimizers.Adam(args.lr)
 
-        @tf.function
+        # @tf.function
         def step(k_images, k_landmarks, l_image, l_landmark):
             with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
                 # compute average embedding vectors by K frames
-                embs = np.zeros([args.batch_size * k, 512, 1])
+                embs = tf.zeros([args.batch_size * k, 512, 1])
                 for i, (image, lmark) in enumerate(zip(k_images, k_landmarks)):
-                    emb = embedder(image, lmark)
+                    emb = embedder([tf.expand_dims(image, 0), tf.expand_dims(lmark, 0)])
                     embs[i] = emb
+                # __import__('ipdb').set_trace()
                 embs = tf.reshape(embs, [args.batch_size, k, 512, 1])
                 embedding = tf.reduce_mean(embs, axis=1)
 
@@ -135,13 +135,11 @@ def main():
             optimizer_g.apply_gradients(zip(gradients_of_generator, gen.trainable_variables))
             optimizer_d.apply_gradients(zip(gradients_of_discriminator, discr.trainable_variables))
 
-        (test_image, test_landmark), test_result = dataset.get_test_batch(k)
-        test_image = np.expand_dims(test_image, axis=0)
-        test_landmark = np.expand_dims(test_landmark, axis=0)
+        test_image, test_landmark, test_result = dataset.get_test_batch(k)
 
         for epoch in range(args.epochs):
             input_fn = dataset.get_input_fn()
-            for images, landmarks, labels in input_fn():
+            for (images, landmarks), labels in input_fn:
                 k_images = labels[:k]
                 k_landmarks = landmarks[:k]
                 l_image = labels[-1]
@@ -154,8 +152,8 @@ def main():
                 discr.save(checkpoint_dir_e)
                 embedder.save(checkpoint_dir_e)
 
-            test_pred = gen(test_image, test_landmark)
-            tf.summary.image("Result", test_pred, step=current_batch)
+            test_pred = gen(test_result, test_landmark)
+            LOG.info(tf.summary.image("Result", test_pred, step=epoch))
 
         # model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf', include_optimizer=False)
         LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')

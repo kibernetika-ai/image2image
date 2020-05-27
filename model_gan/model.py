@@ -11,43 +11,43 @@ import os
 
 
 # components
-class Embedder(tf.keras.Model):
+class Embedder(object):
     def __init__(self, in_height):
         super(Embedder, self).__init__()
 
         self.relu = layers.LeakyReLU()
 
         # in 6*224*224
-        self.pad = Padding(in_height)  # out 6*256*256
-        self.resDown1 = ResBlockDown(6, 64)  # out 64*128*128
-        self.resDown2 = ResBlockDown(64, 128)  # out 128*64*64
-        self.resDown3 = ResBlockDown(128, 256)  # out 256*32*32
-        self.self_att = SelfAttention(256)  # out 256*32*32
-        self.resDown4 = ResBlockDown(256, 512)  # out 515*16*16
-        self.resDown5 = ResBlockDown(512, 512)  # out 512*8*8
-        self.resDown6 = ResBlockDown(512, 512)  # out 512*4*4
-        # self.sum_pooling = nn.AdaptiveMaxPool2d((1, 1))  # out 512*1*1
+        # self.pad = Padding(in_height)  # out 256*256*6
+        self.resDown1 = ResBlockDown(6, 64)  # out 128*128*64
+        self.resDown2 = ResBlockDown(64, 128)  # out 64*64*128
+        self.resDown3 = ResBlockDown(128, 256)  # out 32*32*256
+        self.self_att = SelfAttention(256)  # out 32*32*256
+        self.resDown4 = ResBlockDown(256, 512)  # out 16*16*512
+        self.resDown5 = ResBlockDown(512, 512)  # out 8*8*512
+        self.resDown6 = ResBlockDown(512, 512)  # out 4*4*512
+        # self.sum_pooling = nn.AdaptiveMaxPool2d((1, 1))  # out 1*1*512
         self.sum_pooling = layers.GlobalMaxPool2D()
 
-    def call(self, inputs, training=None, **kwargs):
-        x = inputs[0]
-        y = inputs[1]
-        out = layers.concatenate((x, y), axis=-3)  # out 6*224*224
-        out = self.pad(out)  # out 6*256*256
-        out = self.resDown1(out)  # out 64*128*128
-        out = self.resDown2(out)  # out 128*64*64
-        out = self.resDown3(out)  # out 256*32*32
+    def build(self):
+        x = layers.Input(shape=(256, 256, 3))
+        y = layers.Input(shape=(256, 256, 3))
+        out = layers.concatenate((x, y), axis=-1)  # out 256*256*6
+        # out = self.pad(out)  # out 6*256*256
+        out = self.resDown1(out)  # out 128*128*64
+        out = self.resDown2(out)  # out 64*64*128
+        out = self.resDown3(out)  # out 32*32*256
 
-        out = self.self_att(out)  # out 256*32*32
+        out = self.self_att(out)  # out 32*32*256
 
-        out = self.resDown4(out)  # out 512*16*16
-        out = self.resDown5(out)  # out 512*8*8
-        out = self.resDown6(out)  # out 512*4*4
+        out = self.resDown4(out)  # out 16*16*512
+        out = self.resDown5(out)  # out 8*8*512
+        out = self.resDown6(out)  # out 4*4*512
 
-        out = self.sum_pooling(out)  # out 512*1*1
-        out = self.relu(out)  # out 512*1*1
-        out = tf.reshape(out, [-1, 512, 1])  # out B*512*1
-        return out
+        out = self.sum_pooling(out)  # out 512
+        out = self.relu(out)  # out 512
+        out = layers.Reshape([512, 1])(out)  # out B*512*1
+        return tf.keras.Model(inputs=[x, y], outputs=[out])
 
 
 class Generator(tf.keras.Model):
@@ -107,8 +107,7 @@ class Generator(tf.keras.Model):
         self.self_att_Up = SelfAttention(128)  # out 128*64*64
 
         self.resUp3 = ResBlockUp(128, 64)  # out 64*128*128
-        self.resUp4 = ResBlockUp(64, 32, out_size=(in_height, in_height), scale=None, conv_size=3,
-                                 padding_size=1)  # out 3*224*224
+        self.resUp4 = ResBlockUp(64, 32, scale=2, conv_size=3, padding_size=1)  # out 3*256*256
         # self.conv2d = nn.Conv2d(32, 3, 3, padding=1)
         self.conv2d = layers.Conv2D(3, 3)
 
