@@ -79,6 +79,8 @@ def main():
     discr = model_.Discriminator(dataset.get_video_num())
     gen = model_.Generator(h)
 
+    # gen([np.random.randn(1, 256, 256, 3).astype(np.float32), np.random.randn(1, 512, 1).astype(np.float32)])
+
     checkpoint_dir_g = os.path.join(args.model_dir, 'checkpoint_g')
     checkpoint_dir_d = os.path.join(args.model_dir, 'checkpoint_d')
     checkpoint_dir_e = os.path.join(args.model_dir, 'checkpoint_e')
@@ -104,28 +106,29 @@ def main():
         optimizer_g = tf.keras.optimizers.Adam(args.lr)
         optimizer_d = tf.keras.optimizers.Adam(args.lr)
 
-        # @tf.function
+        @tf.function
         def step(k_images, k_landmarks, l_image, l_landmark):
+            # TODO: fix video id
+            video_id = 0
             with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
                 # compute average embedding vectors by K frames
-                embs = tf.zeros([args.batch_size * k, 512, 1])
-                for i, (image, lmark) in enumerate(zip(k_images, k_landmarks)):
-                    emb = embedder([tf.expand_dims(image, 0), tf.expand_dims(lmark, 0)])
-                    embs[i] = emb
-                # __import__('ipdb').set_trace()
+                # embs = tf.zeros([args.batch_size * k, 512, 1])
+                # for i, (image, lmark) in enumerate(zip(k_images, k_landmarks)):
+                #     emb = embedder([tf.expand_dims(image, 0), tf.expand_dims(lmark, 0)])
+                #     embs[i] = emb
+                embs = embedder([k_images, k_landmarks])
                 embs = tf.reshape(embs, [args.batch_size, k, 512, 1])
                 embedding = tf.reduce_mean(embs, axis=1)  # out B*512*1
 
                 # Train Generator and Discriminator
                 l_landmark = tf.expand_dims(l_landmark, 0)
                 l_image = tf.expand_dims(l_image, 0)
-                fake_out = gen(l_landmark, embedding)
-                # TODO: fix 0 -> to video id
+                fake_out = gen([l_landmark, embedding])
 
-                score_fake, hat_res_list = discr(fake_out, l_landmark, 0)
-                score_real, res_list = discr(l_image, l_landmark, 0)
+                score_fake, hat_res_list = discr([fake_out, l_landmark, video_id])
+                score_real, res_list = discr([l_image, l_landmark, video_id])
 
-                gen_loss = loss_g(l_image, fake_out, score_fake, res_list, hat_res_list, embs, discr.W_i, i)
+                gen_loss = loss_g(l_image, fake_out, score_fake, res_list, hat_res_list, embs, discr.W_i, video_id)
                 # adv_loss = loss_adv(score_fake, res_list, hat_res_list)
                 # mch_loss = loss_match()
                 loss_dfake = loss.loss_dscfake(score_fake)
@@ -142,15 +145,15 @@ def main():
 
         for epoch in range(args.epochs):
             input_fn = dataset.get_input_fn()
-            for (images, landmarks), labels in input_fn:
+            for step_i, ((images, landmarks), labels) in enumerate(input_fn):
                 k_images = labels[:k]
                 k_landmarks = landmarks[:k]
                 l_image = labels[-1]
                 l_landmark = landmarks[-1]
                 step(k_images, k_landmarks, l_image, l_landmark)
 
-            # Save the model every 5 epochs
-            if (epoch + 1) % 5 == 0:
+            # Save the model every epoch (for now)
+            if (epoch + 1) % 1 == 0:
                 gen.save(checkpoint_dir_e)
                 discr.save(checkpoint_dir_e)
                 embedder.save(checkpoint_dir_e)

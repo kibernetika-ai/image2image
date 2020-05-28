@@ -38,38 +38,37 @@ def loss_dsc(r_x, r_x_hat):
     return tf.reduce_mean(tf.math.maximum(0.0, (1 + r_x_hat)) + tf.math.maximum(0.0, (1 - r_x)))
 
 
-class LossCnt(layers.Layer):
+class LossCnt(object):
     def __init__(self, img_size):
         super(LossCnt, self).__init__()
         self.img_size = img_size
         self.loss_vgg19_wt = 1e-2
         self.loss_vggface_wt = 2e-3
 
-        self.vggface_xi = VGGFACE(
+        self.vggface = VGGFACE(
             input_tensor=None,
             input_shape=self.img_size
         )  # preprocess_tf_input(tf.multiply(tf.add(xi,1.0),127.5))
-        self.vggface_x_hat = VGGFACE(
-            input_tensor=None,
-            input_shape=self.img_size
-        )  # preprocess_tf_input(tf.multiply(tf.add(x_hat,1.0),127.5))
 
-        self.vgg19_xi = VGG19(input_tensor=None, input_shape=self.img_size)
-        self.vgg19_x_hat = VGG19(input_tensor=None, input_shape=self.img_size)
+        self.vgg19 = VGG19(input_tensor=None, input_shape=self.img_size)
 
-    def call(self, x, x_hat, vgg19_weight=1e-2, vggface_weight=2e-3):
+    def __call__(self, x, x_hat, vgg19_weight=1e-2, vggface_weight=2e-3):
+        vggface_xi = self.vggface(x)
+        vggface_x_hat = self.vggface(x_hat)
+        vgg19_xi = self.vgg19(x)
+        vgg19_x_hat = self.vgg19(x_hat)
         vggface_loss = 0
-        for i in range(len(self.vggface_xi.output)):
-            vggface_loss += tf.reduce_mean(tf.abs(self.vggface_xi.output[i] - self.vggface_x_hat.output[i]))
+        for i in range(len(vggface_xi)):
+            vggface_loss += tf.reduce_mean(tf.abs(vggface_xi[i] - vggface_x_hat[i]))
 
         vgg19_loss = 0
-        for i in range(len(self.vgg19_xi.output)):
-            vgg19_loss += tf.reduce_mean(tf.abs(self.vgg19_xi.output[i] - self.vgg19_x_hat.output[i]))
+        for i in range(len(vgg19_xi)):
+            vgg19_loss += tf.reduce_mean(tf.abs(vgg19_xi[i] - vgg19_x_hat[i]))
 
         return vgg19_loss * self.loss_vgg19_wt + vggface_loss * self.loss_vggface_wt
 
 
-class LossAdv(layers.Layer):
+class LossAdv(object):
     def __init__(self, FM_weight=1e1):
         super(LossAdv, self).__init__()
         self.FM_weight = FM_weight
@@ -80,21 +79,21 @@ class LossAdv(layers.Layer):
             loss += tf.reduce_mean(tf.abs(d_act[i] - d_act_hat[i]))
         return loss * self.FM_weight
 
-    def call(self, r_hat, d_act, d_act_hat):
+    def __call__(self, r_hat, d_act, d_act_hat):
         return -tf.reduce_mean(r_hat) + self.loss_fm(d_act, d_act_hat)
 
 
-class LossMatch(layers.Layer):
+class LossMatch(object):
     def __init__(self, match_weight=8e1):
         super(LossMatch, self).__init__()
         # self.l1_loss = nn.L1Loss()
         self.match_weight = match_weight
 
-    def call(self, e_vectors, W, i):
+    def __call__(self, e_vectors, W, i):
         return tf.reduce_mean(tf.abs(W - e_vectors)) * self.match_weight
 
 
-class LossG(layers.Layer):
+class LossG(object):
     """
     Loss for generator meta training
     Inputs: x, x_hat, r_hat, D_res_list, D_hat_res_list, e, W, i
@@ -108,7 +107,7 @@ class LossG(layers.Layer):
         self.lossAdv = LossAdv()
         self.lossMatch = LossMatch()
 
-    def call(self, x, x_hat, r_hat, D_res_list, D_hat_res_list, e_vectors, W, i):
+    def __call__(self, x, x_hat, r_hat, D_res_list, D_hat_res_list, e_vectors, W, i):
         loss_cnt = self.LossCnt(x, x_hat)
         loss_adv = self.lossAdv(r_hat, D_res_list, D_hat_res_list)
         loss_match = self.lossMatch(e_vectors, W, i)

@@ -91,22 +91,6 @@ class Generator(tf.keras.Model):
         self.resDown4 = ResBlockDown(256, 512)  # out 16*16*512
         self.in4 = tfa.layers.InstanceNormalization()
 
-        # Decoder channels and self-attention channel
-        self.dec_down_ch = [256, 128, 64, 3]
-
-        # Residual Block channel
-        self.res_blk_ch = 512
-
-        # Considering input and output channel in a residual block, multiple of
-        # 2 because beta and gamma affine parameter.
-        self.split_lens = [self.res_blk_ch] * 11 * 2 + \
-                          [self.res_blk_ch] * 2 * 2 + \
-                          [self.res_blk_ch] * 2 * 2 + \
-                          [self.dec_down_ch[0]] * 2 * 2 + \
-                          [self.dec_down_ch[1]] * 2 * 2 + \
-                          [self.dec_down_ch[2]] * 2 * 2 + \
-                          [self.dec_down_ch[3]] * 2
-
         # Res
         # in 512*16*16
         self.res1 = ResBlock(512)
@@ -129,11 +113,13 @@ class Generator(tf.keras.Model):
         self.conv2d = layers.Conv2D(3, 3, padding='same')
 
         # self.p = nn.Parameter(torch.rand(self.P_LEN, 512).normal_(0.0, 0.02))
-        self.p = tf.Variable(initial_value=tf.random.normal([self.P_LEN, 512], 0.0, 0.02))
-
         self.finetuning = finetuning
-        self.psi = tf.Variable(tf.random.normal([self.P_LEN, 1]))
+
         self.e_finetuning = e_finetuning
+
+    def build(self, input_shape):
+        self.p = tf.Variable(initial_value=tf.random.normal([self.P_LEN, 512], 0.0, 0.02), trainable=True, name='p')
+        self.psi = tf.Variable(initial_value=tf.random.normal([self.P_LEN, 1]), trainable=True, name='psi')
 
     def finetuning_init(self):
         if self.finetuning:
@@ -142,8 +128,8 @@ class Generator(tf.keras.Model):
     def call(self, inputs, training=None, **kwargs):
         y = inputs[0]
         e = inputs[1]
-        if math.isnan(self.p[0, 0]):
-            sys.exit()
+        # if math.isnan(self.p[0, 0]):
+        #     sys.exit()
 
         if self.finetuning:
             # e_psi = self.psi.unsqueeze(0)
@@ -200,12 +186,8 @@ class Generator(tf.keras.Model):
         )
 
         out = self.relu(out)
-
         out = self.conv2d(out)  # out Bx256x256x3
-
         out = self.sigmoid(out)
-
-        # out = out*255
 
         # out 256*256*3
         return out
@@ -223,6 +205,7 @@ class Discriminator(tf.keras.Model):
     def __init__(self, num_videos, finetuning=False, e_finetuning=None):
         super(Discriminator, self).__init__()
         self.relu = layers.LeakyReLU()
+        self.num_videos = num_videos
 
         # in 6*224*224
         # self.pad = Padding(224)  # out 256*256*6
@@ -246,13 +229,14 @@ class Discriminator(tf.keras.Model):
         #             w_i = torch.rand(512, 1)
         #             os.mkdir(self.path_to_Wi + '/W_' + str(i))
         #             torch.save({'W_i': w_i}, self.path_to_Wi + '/W_' + str(i) + '/W_' + str(i) + '.tar')
-        self.W_i = tf.Variable(tf.random.normal([512, num_videos]))
-        self.w_0 = tf.Variable(tf.random.normal([512, 1]))
-        self.b = tf.Variable(tf.random.uniform([]))
-
         self.finetuning = finetuning
         self.e_finetuning = e_finetuning
-        self.w_prime = tf.Variable(tf.random.normal([512, 1]))
+
+    def build(self, input_shape):
+        self.W_i = tf.Variable(tf.random.normal([512, self.num_videos]), trainable=True, name='W_i')
+        self.w_0 = tf.Variable(tf.random.normal([512, 1]), trainable=True, name='w_0')
+        self.b = tf.Variable(tf.random.uniform([]), trainable=True, name='b')
+        self.w_prime = tf.Variable(tf.random.normal([512, 1]), trainable=True, name='w_prime')
 
     def finetuning_init(self):
         if self.finetuning:
