@@ -76,8 +76,9 @@ def main():
         LOG.info("=" * 50)
 
     embedder = model_.Embedder(h).build()
-    discr = model_.Discriminator()
+    discr = model_.Discriminator(dataset.get_video_num())
     gen = model_.Generator(h)
+
     checkpoint_dir_g = os.path.join(args.model_dir, 'checkpoint_g')
     checkpoint_dir_d = os.path.join(args.model_dir, 'checkpoint_d')
     checkpoint_dir_e = os.path.join(args.model_dir, 'checkpoint_e')
@@ -113,9 +114,11 @@ def main():
                     embs[i] = emb
                 # __import__('ipdb').set_trace()
                 embs = tf.reshape(embs, [args.batch_size, k, 512, 1])
-                embedding = tf.reduce_mean(embs, axis=1)
+                embedding = tf.reduce_mean(embs, axis=1)  # out B*512*1
 
                 # Train Generator and Discriminator
+                l_landmark = tf.expand_dims(l_landmark, 0)
+                l_image = tf.expand_dims(l_image, 0)
                 fake_out = gen(l_landmark, embedding)
                 # TODO: fix 0 -> to video id
 

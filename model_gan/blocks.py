@@ -64,11 +64,11 @@ class SelfAttention(layers.Layer):
 
     @staticmethod
     def hw_flatten(x):
-        _, h, w, c = x.get_shape().as_list()
+        _, h, w, c = x.get_shape()
         return tf.reshape(x, shape=[-1, h * w, c])
 
     def call(self, x, **kwargs):
-        b, h, w, c = x.shape
+        b, h, w, c = x.get_shape()
         f_projection = self.conv_f(x)  # BxHxWxC', C'=C//8
         g_projection = self.conv_g(x)  # BxHxWxC'
         h_projection = self.conv_h(x)  # BxHxWxC
@@ -95,7 +95,6 @@ def adaIN(feature, mean_style, std_style, eps=1e-5):
 
     adain = std_style * (feature - mean_feat) / std_feat + mean_style
 
-    print(adain.shape)
     adain = tf.reshape(adain, [b, h, w, c])
     return adain
 
@@ -111,19 +110,19 @@ class ResBlock(layers.Layer):
 
         # left
         # self.conv1 = nn.utils.spectral_norm(nn.Conv2d(in_channel, in_channel, 3, padding=1))
-        self.conv1 = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel, 3))
+        self.conv1 = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel, 3, padding='same'))
         # self.conv2 = nn.utils.spectral_norm(nn.Conv2d(in_channel, in_channel, 3, padding=1))
-        self.conv2 = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel, 3))
+        self.conv2 = spectral_norm.SpectralNormalization(layers.Conv2D(in_channel, 3, padding='same'))
 
     def call(self, x, psi_slice):
         c = psi_slice.shape[1]
 
         res = x
 
-        out = adaIN(x, psi_slice[:, 0:c // 4, :], psi_slice[:, c // 4:c // 2, :])
+        out = adaIN(x, psi_slice[:, 0:c // 4], psi_slice[:, c // 4:c // 2])
         out = self.relu(out)
         out = self.conv1(out)
-        out = adaIN(out, psi_slice[:, c // 2:3 * c // 4, :], psi_slice[:, 3 * c // 4:c, :])
+        out = adaIN(out, psi_slice[:, c // 2:3 * c // 4], psi_slice[:, 3 * c // 4:c])
         out = self.relu(out)
         out = self.conv2(out)
 
@@ -166,24 +165,24 @@ class ResBlockUp(layers.Layer):
         self.in_channel = in_channel
         self.out_channel = out_channel
 
-        self.upsample = layers.Conv2DTranspose(in_channel, 3, scale)
+        self.upsample = layers.Conv2DTranspose(in_channel, 3, scale, padding='same')
         self.relu = layers.LeakyReLU()
 
         # left
         # self.conv_l1 = nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, 1))
-        self.conv_l1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, 1))
+        self.conv_l1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, 1, padding='same'))
 
         # right
         # self.conv_r1 = nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, conv_size, padding=padding_size))
-        self.conv_r1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size))
+        self.conv_r1 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size, padding='same'))
         # self.conv_r2 = nn.utils.spectral_norm(nn.Conv2d(out_channel, out_channel, conv_size, padding=padding_size))
-        self.conv_r2 = nn.utils.spectral_norm(nn.Conv2d(out_channel, out_channel, conv_size, padding=padding_size))
+        self.conv_r2 = spectral_norm.SpectralNormalization(layers.Conv2D(out_channel, conv_size, padding='same'))
 
     def call(self, x, psi_slice):
-        mean1 = psi_slice[:, 0:self.in_channel, :]
-        std1 = psi_slice[:, self.in_channel:2 * self.in_channel, :]
-        mean2 = psi_slice[:, 2 * self.in_channel:2 * self.in_channel + self.out_channel, :]
-        std2 = psi_slice[:, 2 * self.in_channel + self.out_channel: 2 * (self.in_channel + self.out_channel), :]
+        mean1 = psi_slice[:, 0:self.in_channel]
+        std1 = psi_slice[:, self.in_channel:2 * self.in_channel]
+        mean2 = psi_slice[:, 2 * self.in_channel:2 * self.in_channel + self.out_channel]
+        std2 = psi_slice[:, 2 * self.in_channel + self.out_channel: 2 * (self.in_channel + self.out_channel)]
 
         res = x
 

@@ -51,44 +51,61 @@ class Embedder(object):
 
 
 class Generator(tf.keras.Model):
-    P_LEN = 2 * (512 * 2 * 5 + 512 + 256 + 256 + 128 + 128 + 64 + 64 + 32 + 32)
-    slice_idx = [0,
-                 512 * 4,  # res1
-                 512 * 4,  # res2
-                 512 * 4,  # res3
-                 512 * 4,  # res4
-                 512 * 4,  # res5
-                 512 * 2 + 256 * 2,  # resUp1
-                 256 * 2 + 128 * 2,  # resUp2
-                 128 * 2 + 64 * 2,  # resUp3
-                 64 * 2 + 32 * 2,  # resUp4
-                 32 * 2]  # last adain
-    for i in range(1, len(slice_idx)):
-        slice_idx[i] = slice_idx[i - 1] + slice_idx[i]
-
     def __init__(self, in_height, finetuning=False, e_finetuning=None):
         super(Generator, self).__init__()
+
+        self.P_LEN = 2 * (512 * 2 * 5 + 512 + 256 + 256 + 128 + 128 + 64 + 64 + 32 + 32)
+        self.slice_idx = [
+            0,
+            512 * 4,  # res1
+            512 * 4,  # res2
+            512 * 4,  # res3
+            512 * 4,  # res4
+            512 * 4,  # res5
+            512 * 2 + 256 * 2,  # resUp1
+            256 * 2 + 128 * 2,  # resUp2
+            128 * 2 + 64 * 2,  # resUp3
+            64 * 2 + 32 * 2,  # resUp4
+            32 * 2]  # last adain
+        for i in range(1, len(self.slice_idx)):
+            self.slice_idx[i] = self.slice_idx[i - 1] + self.slice_idx[i]
 
         self.sigmoid = tf.keras.activations.sigmoid
         self.relu = layers.LeakyReLU()
 
         # in 3*224*224 for voxceleb2
-        self.pad = Padding(in_height)  # out 3*256*256
+        # self.pad = Padding(in_height)  # out 3*256*256
 
         # Down
-        self.resDown1 = ResBlockDown(3, 64, conv_size=9, padding_size=4)  # out 64*128*128
+        self.resDown1 = ResBlockDown(3, 64, conv_size=9, padding_size=4)  # out 128*128*64
         self.in1 = tfa.layers.InstanceNormalization()
 
-        self.resDown2 = ResBlockDown(64, 128)  # out 128*64*64
+        self.resDown2 = ResBlockDown(64, 128)  # out 64*64*128
         self.in2 = tfa.layers.InstanceNormalization()
 
-        self.resDown3 = ResBlockDown(128, 256)  # out 256*32*32
+        self.resDown3 = ResBlockDown(128, 256)  # out 32*32*256
         self.in3 = tfa.layers.InstanceNormalization()
 
-        self.self_att_Down = SelfAttention(256)  # out 256*32*32
+        self.self_att_Down = SelfAttention(256)  # out 32*32*256
 
-        self.resDown4 = ResBlockDown(256, 512)  # out 512*16*16
+        self.resDown4 = ResBlockDown(256, 512)  # out 16*16*512
         self.in4 = tfa.layers.InstanceNormalization()
+
+        # Decoder channels and self-attention channel
+        self.dec_down_ch = [256, 128, 64, 3]
+
+        # Residual Block channel
+        self.res_blk_ch = 512
+
+        # Considering input and output channel in a residual block, multiple of
+        # 2 because beta and gamma affine parameter.
+        self.split_lens = [self.res_blk_ch] * 11 * 2 + \
+                          [self.res_blk_ch] * 2 * 2 + \
+                          [self.res_blk_ch] * 2 * 2 + \
+                          [self.dec_down_ch[0]] * 2 * 2 + \
+                          [self.dec_down_ch[1]] * 2 * 2 + \
+                          [self.dec_down_ch[2]] * 2 * 2 + \
+                          [self.dec_down_ch[3]] * 2
 
         # Res
         # in 512*16*16
@@ -100,16 +117,16 @@ class Generator(tf.keras.Model):
         # out 512*16*16
 
         # Up
-        # in 512*16*16
-        self.resUp1 = ResBlockUp(512, 256)  # out 256*32*32
-        self.resUp2 = ResBlockUp(256, 128)  # out 128*64*64
+        # in 16*16*512
+        self.resUp1 = ResBlockUp(512, 256)  # out 32*32*256
+        self.resUp2 = ResBlockUp(256, 128)  # out 64*64*128
 
-        self.self_att_Up = SelfAttention(128)  # out 128*64*64
+        self.self_att_Up = SelfAttention(128)  # out 64*64*128
 
-        self.resUp3 = ResBlockUp(128, 64)  # out 64*128*128
-        self.resUp4 = ResBlockUp(64, 32, scale=2, conv_size=3, padding_size=1)  # out 3*256*256
+        self.resUp3 = ResBlockUp(128, 64)  # out 128*128*64
+        self.resUp4 = ResBlockUp(64, 32, scale=2, conv_size=3, padding_size=1)  # out 256*256*3
         # self.conv2d = nn.Conv2d(32, 3, 3, padding=1)
-        self.conv2d = layers.Conv2D(3, 3)
+        self.conv2d = layers.Conv2D(3, 3, padding='same')
 
         # self.p = nn.Parameter(torch.rand(self.P_LEN, 512).normal_(0.0, 0.02))
         self.p = tf.Variable(initial_value=tf.random.normal([self.P_LEN, 512], 0.0, 0.02))
@@ -131,19 +148,20 @@ class Generator(tf.keras.Model):
         if self.finetuning:
             # e_psi = self.psi.unsqueeze(0)
             e_psi = tf.expand_dims(self.psi, axis=0)
-            e_psi = e_psi.expand(e.shape[0], self.P_LEN, 1)
+            # e_psi = e_psi.expand(e.shape[0], self.P_LEN, 1)
         else:
             # p = self.p.unsqueeze(0)
             p = tf.expand_dims(self.p, axis=0)
             # tf.broadcast_to()
-            p = p.expand(e.shape[0], self.P_LEN, 512)
-            e_psi = tf.matmul(p, e)  # B, p_len, 1
+            # p = p.expand(e.shape[0], self.P_LEN, 512)
+            e_psi = tf.matmul(p, e)  # B, p_len
+            e_psi = tf.reshape(e_psi, [-1, self.P_LEN])
 
-        # in 3*224*224 for voxceleb2
-        out = self.pad(y)
+        # in 224*224*3 for voxceleb2
+        # out = self.pad(y)
 
         # Encoding
-        out = self.resDown1(out)
+        out = self.resDown1(y)
         out = self.in1(out)
 
         out = self.resDown2(out)
@@ -158,38 +176,38 @@ class Generator(tf.keras.Model):
         out = self.in4(out)
 
         # Residual
-        out = self.res1(out, e_psi[:, self.slice_idx[0]:self.slice_idx[1], :])
-        out = self.res2(out, e_psi[:, self.slice_idx[1]:self.slice_idx[2], :])
-        out = self.res3(out, e_psi[:, self.slice_idx[2]:self.slice_idx[3], :])
-        out = self.res4(out, e_psi[:, self.slice_idx[3]:self.slice_idx[4], :])
-        out = self.res5(out, e_psi[:, self.slice_idx[4]:self.slice_idx[5], :])
+        out = self.res1(out, e_psi[:, self.slice_idx[0]:self.slice_idx[1]])
+        out = self.res2(out, e_psi[:, self.slice_idx[1]:self.slice_idx[2]])
+        out = self.res3(out, e_psi[:, self.slice_idx[2]:self.slice_idx[3]])
+        out = self.res4(out, e_psi[:, self.slice_idx[3]:self.slice_idx[4]])
+        out = self.res5(out, e_psi[:, self.slice_idx[4]:self.slice_idx[5]])  # out Bx16x16x512
 
         # Decoding
-        out = self.resUp1(out, e_psi[:, self.slice_idx[5]:self.slice_idx[6], :])
+        out = self.resUp1(out, e_psi[:, self.slice_idx[5]:self.slice_idx[6]])  # out Bx32x32x256
 
-        out = self.resUp2(out, e_psi[:, self.slice_idx[6]:self.slice_idx[7], :])
+        out = self.resUp2(out, e_psi[:, self.slice_idx[6]:self.slice_idx[7]])  # out Bx64x64x128
 
         out = self.self_att_Up(out)
 
-        out = self.resUp3(out, e_psi[:, self.slice_idx[7]:self.slice_idx[8], :])
+        out = self.resUp3(out, e_psi[:, self.slice_idx[7]:self.slice_idx[8]])  # out Bx128x128x64
 
-        out = self.resUp4(out, e_psi[:, self.slice_idx[8]:self.slice_idx[9], :])
+        out = self.resUp4(out, e_psi[:, self.slice_idx[8]:self.slice_idx[9]])  # out Bx256x256x32
 
         out = adaIN(
             out,
-            e_psi[:, self.slice_idx[9]:(self.slice_idx[10] + self.slice_idx[9]) // 2, :],
-            e_psi[:, (self.slice_idx[10] + self.slice_idx[9]) // 2:self.slice_idx[10], :]
+            e_psi[:, self.slice_idx[9]:(self.slice_idx[10] + self.slice_idx[9]) // 2],
+            e_psi[:, (self.slice_idx[10] + self.slice_idx[9]) // 2:self.slice_idx[10]]
         )
 
         out = self.relu(out)
 
-        out = self.conv2d(out)
+        out = self.conv2d(out)  # out Bx256x256x3
 
         out = self.sigmoid(out)
 
         # out = out*255
 
-        # out 3*224*224
+        # out 256*256*3
         return out
 
 
@@ -202,22 +220,22 @@ class Generator(tf.keras.Model):
 #         return self.W_i
 
 class Discriminator(tf.keras.Model):
-    def __init__(self, finetuning=False, e_finetuning=None):
+    def __init__(self, num_videos, finetuning=False, e_finetuning=None):
         super(Discriminator, self).__init__()
         self.relu = layers.LeakyReLU()
 
         # in 6*224*224
-        self.pad = Padding(224)  # out 6*256*256
-        self.resDown1 = ResBlockDown(6, 64)  # out 64*128*128
-        self.resDown2 = ResBlockDown(64, 128)  # out 128*64*64
-        self.resDown3 = ResBlockDown(128, 256)  # out 256*32*32
-        self.self_att = SelfAttention(256)  # out 256*32*32
-        self.resDown4 = ResBlockDown(256, 512)  # out 512*16*16
-        self.resDown5 = ResBlockDown(512, 512)  # out 512*8*8
-        self.resDown6 = ResBlockDown(512, 512)  # out 512*4*4
+        # self.pad = Padding(224)  # out 256*256*6
+        self.resDown1 = ResBlockDown(6, 64)  # out 128*128*64
+        self.resDown2 = ResBlockDown(64, 128)  # out 64*64*128
+        self.resDown3 = ResBlockDown(128, 256)  # out 32*32*256
+        self.self_att = SelfAttention(256)  # out 32*32*256
+        self.resDown4 = ResBlockDown(256, 512)  # out 16*16*512
+        self.resDown5 = ResBlockDown(512, 512)  # out 8*8*512
+        self.resDown6 = ResBlockDown(512, 512)  # out 4*4*512
         self.res = ResBlockD(512)  # out 512*4*4
-        # self.sum_pooling = nn.AdaptiveAvgPool2d((1, 1))  # out 512*1*1
-        self.sum_pooling = layers.GlobalAvgPool2D()  # out 512*1*1
+        # self.sum_pooling = nn.AdaptiveAvgPool2d((1, 1))  # out 1*1*512
+        self.sum_pooling = layers.GlobalAvgPool2D()  # out 1*1*512
 
         # if not finetuning:
         #     print('Initializing Discriminator weights')
@@ -228,7 +246,7 @@ class Discriminator(tf.keras.Model):
         #             w_i = torch.rand(512, 1)
         #             os.mkdir(self.path_to_Wi + '/W_' + str(i))
         #             torch.save({'W_i': w_i}, self.path_to_Wi + '/W_' + str(i) + '/W_' + str(i) + '.tar')
-        self.W_i = tf.Variable(tf.random.normal([512, 32]))
+        self.W_i = tf.Variable(tf.random.normal([512, num_videos]))
         self.w_0 = tf.Variable(tf.random.normal([512, 1]))
         self.b = tf.Variable(tf.random.uniform([]))
 
@@ -250,38 +268,39 @@ class Discriminator(tf.keras.Model):
         # out = layers.concatenate([x, y], axis=-1)  # out B*6*224*224
         out = layers.concatenate([x, y], axis=-1)  # out B*224*224*6
 
-        out = self.pad(out)
+        # out = self.pad(out)
 
-        out1 = self.resDown1(out)
+        out1 = self.resDown1(out)  # out B*128*128*64
+        out2 = self.resDown2(out1)  # out B*64*64*128
+        out3 = self.resDown3(out2)  # out B*32*32*256
 
-        out2 = self.resDown2(out1)
+        out = self.self_att(out3)  # out B*32*32*256
 
-        out3 = self.resDown3(out2)
-
-        out = self.self_att(out3)
-
-        out4 = self.resDown4(out)
-
-        out5 = self.resDown5(out4)
-
-        out6 = self.resDown6(out5)
+        out4 = self.resDown4(out)  # out B*16*16*512
+        out5 = self.resDown5(out4)  # out B*8*8*512
+        out6 = self.resDown6(out5)  # out B*4*4*512
 
         out7 = self.res(out6)
-
         out = self.sum_pooling(out7)
+        out = self.relu(out)  # out Bx512
 
-        out = self.relu(out)
-
-        # out = out.squeeze(-1)  # out B*512*1
-        out = tf.squeeze(out, axis=-1)
+        # out = out.squeeze(-1)  # out B*1*512
+        # out = tf.squeeze(out, axis=-2)
 
         # Calculate Realism Score
-        _out = tf.transpose(out, [1, 2])
-        _W_i = tf.transpose(tf.expand_dims(self.W_i[:, i], axis=-1), [0, 1])
-        out = tf.matmul(_out, _W_i + self.w_0) + self.b
-        out = tf.keras.activations.sigmoid(out)
+        if self.finetuning:
+            # _w_prime = tf.expand_dims(self.w_prime, axis=0)
+            out = tf.matmul(out, self.w_prime) + self.b
+        else:
+            # out = torch.bmm(out.transpose(1, 2),
+            #                 (self.W_i[:, i].unsqueeze(-1)).transpose(0, 1) + self.w_0) + self.b  # 1x1
+            _w_i = tf.expand_dims(self.W_i[:, i], axis=-1)
+            _w_i = _w_i + self.w_0
+            _out = tf.matmul(out, _w_i)
+            out = _out + self.b  # 1x1
 
-        out = tf.reshape(out, x.shape[0])
+            # ??? need sigmoid ???
+            out = tf.keras.activations.sigmoid(out)
 
         return out, [out1, out2, out3, out4, out5, out6, out7]
 

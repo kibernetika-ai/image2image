@@ -67,6 +67,9 @@ class ImageDataset:
         self.resize_height = height
         self.height = height // 16 * 16
 
+    def get_video_num(self):
+        return len(self.train_dirs)
+
     def get_generator(self, dir_list, shuffle=True):
         target_list = dir_list
 
