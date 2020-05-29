@@ -25,7 +25,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--batch-size', type=int, default=1)
-    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--lr', type=float, default=0.0002)
     parser.add_argument('--lr-scheduler', action='store_true')
     parser.add_argument('--mode', default='train')
     parser.add_argument('--export', action='store_true')
@@ -54,7 +54,7 @@ def main():
     logging.root.setLevel(logging.INFO)
     w, h = train.parse_resolution(args.resolution)
     k = 8
-    dataset = train.ImageDataset(args.data_dir, args.batch_size * (k + 1), width=w, height=h)
+    dataset = train.ImageDataset(args.data_dir, args.batch_size * k, width=w, height=h)
 
     # inp = dataset.get_input_fn()
     # it = inp.as_numpy_iterator()
@@ -120,8 +120,6 @@ def main():
                 embedding = tf.reduce_mean(embs, axis=1)  # out B*512*1
 
                 # Train Generator and Discriminator
-                l_landmark = tf.expand_dims(l_landmark, 0)
-                l_image = tf.expand_dims(l_image, 0)
                 fake_out = gen([l_landmark, embedding])
 
                 score_fake, hat_res_list = discr([fake_out, l_landmark, video_id])
@@ -167,10 +165,10 @@ def main():
         for epoch in range(args.epochs):
             input_fn = dataset.get_input_fn()
             for step_i, ((images, landmarks), labels) in enumerate(input_fn):
-                k_images = labels[:k]
-                k_landmarks = landmarks[:k]
-                l_image = labels[-1]
-                l_landmark = landmarks[-1]
+                k_images = labels
+                k_landmarks = landmarks
+                l_image = tf.expand_dims(random.choice(k_images), 0)
+                l_landmark = tf.expand_dims(random.choice(k_landmarks), 0)
                 step(k_images, k_landmarks, l_image, l_landmark, step_i)
 
                 # Save the model every epoch (for now)

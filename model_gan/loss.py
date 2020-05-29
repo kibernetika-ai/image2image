@@ -73,6 +73,10 @@ class LossAdv(object):
         super(LossAdv, self).__init__()
         self.FM_weight = FM_weight
 
+    @staticmethod
+    def l1_loss(target, output):
+        return tf.reduce_mean(tf.abs(target - output))
+
     def loss_fm(self, d_act, d_act_hat):
         loss = 0
         for i in range(0, len(d_act)):
@@ -80,7 +84,11 @@ class LossAdv(object):
         return loss * self.FM_weight
 
     def __call__(self, r_hat, d_act, d_act_hat):
-        return -tf.reduce_mean(r_hat) + self.loss_fm(d_act, d_act_hat)
+        loss_fm = 0
+        for res, res_hat in zip(d_act, d_act_hat):
+            loss_fm += self.l1_loss(res, res_hat)
+
+        return -tf.reduce_mean(r_hat) + loss_fm * self.FM_weight
 
 
 class LossMatch(object):
@@ -89,8 +97,17 @@ class LossMatch(object):
         # self.l1_loss = nn.L1Loss()
         self.match_weight = match_weight
 
+    @staticmethod
+    def l1_loss(target, output):
+        return tf.reduce_mean(tf.abs(target - output))
+
     def __call__(self, e_vectors, W, i):
-        return tf.reduce_mean(tf.abs(W - e_vectors)) * self.match_weight
+        loss = 0
+        for b in range(e_vectors.shape[0]):
+            for k in range(e_vectors.shape[1]):
+                loss += tf.reduce_mean(tf.abs(tf.squeeze(e_vectors[b, k]) - W[:, i]))
+            loss = loss / e_vectors.shape[1]
+        return loss * self.match_weight
 
 
 class LossG(object):
@@ -103,14 +120,15 @@ class LossG(object):
     def __init__(self, img_size):
         super(LossG, self).__init__()
 
-        self.LossCnt = LossCnt(img_size)
-        self.lossAdv = LossAdv()
-        self.lossMatch = LossMatch()
+        self.loss_cnt = LossCnt(img_size)
+        self.loss_adv = LossAdv()
+        self.loss_match = LossMatch()
 
-    def __call__(self, x, x_hat, r_hat, D_res_list, D_hat_res_list, e_vectors, W, i):
-        loss_cnt = self.LossCnt(x, x_hat)
-        loss_adv = self.lossAdv(r_hat, D_res_list, D_hat_res_list)
-        loss_match = self.lossMatch(e_vectors, W, i)
+    def __call__(self, x, x_hat, r_hat, d_res_list, d_hat_res_list, e_vectors, w, i):
+        loss_cnt = self.loss_cnt(x, x_hat)
+        loss_adv = self.loss_adv(r_hat, d_res_list, d_hat_res_list)
+        loss_match = self.loss_match(e_vectors, w, i)
+        # print(f'{loss_cnt}, {loss_adv}, {loss_match}')
         return loss_cnt + loss_adv + loss_match
 
 
