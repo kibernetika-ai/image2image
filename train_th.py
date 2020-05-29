@@ -162,15 +162,18 @@ def main():
 
         refer_images, test_landmarks, test_images = dataset.get_test_batch(k)
         test_landmark, test_result = np.expand_dims(test_landmarks[0], 0), np.expand_dims(test_images[0], 0)
+        num_steps = 0
 
         for epoch in range(args.epochs):
             input_fn = dataset.get_input_fn()
+
             for step_i, ((images, landmarks), labels) in enumerate(input_fn):
                 k_images = labels
                 k_landmarks = landmarks
                 l_image = tf.expand_dims(random.choice(k_images), 0)
                 l_landmark = tf.expand_dims(random.choice(k_landmarks), 0)
-                step(k_images, k_landmarks, l_image, l_landmark, step_i)
+                step(k_images, k_landmarks, l_image, l_landmark, step_i + num_steps * epoch)
+            num_steps = step_i
 
                 # Save the model every epoch (for now)
             if (epoch + 1) % 1 == 0:
@@ -181,7 +184,7 @@ def main():
             embedding = tf.reduce_mean(embs, axis=1)  # out B*512*1
             test_pred = gen([test_landmark, embedding])
             with writer.as_default():
-                tf.summary.scalar('val_loss', tf.reduce_mean(tf.abs(test_result - test_pred)))
+                tf.summary.scalar('val_loss', tf.reduce_mean(tf.abs(test_result - test_pred)), step=epoch)
                 LOG.info(tf.summary.image("Result", test_pred, step=epoch))
 
         # model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf', include_optimizer=False)
