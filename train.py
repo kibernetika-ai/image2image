@@ -118,7 +118,7 @@ class ImageDataset:
                 tf.TensorShape([None, None, 3])
             )
         )
-        return dataset.batch(self.batch_size).prefetch(self.batch_size * 2)
+        return dataset.padded_batch(self.batch_size, drop_remainder=True).prefetch(self.batch_size * 2)
 
     def get_input_fn(self):
         return self._get_ds_from_list(self.train_dirs)

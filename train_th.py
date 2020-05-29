@@ -81,33 +81,32 @@ def main():
 
     # gen([np.random.randn(1, 256, 256, 3).astype(np.float32), np.random.randn(1, 512, 1).astype(np.float32)])
 
-    checkpoint_dir_g = os.path.join(args.model_dir, 'checkpoint_g')
-    checkpoint_dir_d = os.path.join(args.model_dir, 'checkpoint_d')
-    checkpoint_dir_e = os.path.join(args.model_dir, 'checkpoint_e')
-    if os.path.exists(checkpoint_dir_g):
-        gen.load_weights(checkpoint_dir_g)
+    optimizer_g = tf.keras.optimizers.Adam(args.lr)
+    optimizer_d = tf.keras.optimizers.Adam(args.lr)
+    checkpoint_dir = os.path.join(args.model_dir, 'checkpoint')
+    checkpoint = tf.train.Checkpoint(
+        optimizer_g=optimizer_g,
+        optimizer_d=optimizer_d,
+        generator=gen,
+        discriminator=discr
+    )
+    checkpoint_man = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=5)
+    checkpoint_man.restore_or_initialize()
 
-    if os.path.exists(checkpoint_dir_d):
-        gen.load_weights(checkpoint_dir_d)
-
-    if os.path.exists(checkpoint_dir_e):
-        gen.load_weights(checkpoint_dir_e)
+    # if len(glob.glob(checkpoint_prefix + '*')) > 0:
+    #     checkpoint.restore(checkpoint_prefix)
     # LOG.info(model.summary())
 
     mode = args.mode
 
     if mode == 'train':
+        writer = tf.summary.create_file_writer(os.path.join(args.model_dir))
+        # tf.summary.trace_on(graph=True, profiler=True)
         loss_g = loss.LossG(img_size=[h, w, 3])
-        # loss_d = loss.loss_dsc
-        # loss_cnt = loss.LossCnt()
-        # loss_adv = loss.LossAdv()
-        # loss_match = loss.LossMatch()
         scheduler = train.Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
-        optimizer_g = tf.keras.optimizers.Adam(args.lr)
-        optimizer_d = tf.keras.optimizers.Adam(args.lr)
 
-        @tf.function
-        def step(k_images, k_landmarks, l_image, l_landmark):
+        # @tf.function
+        def step(k_images, k_landmarks, l_image, l_landmark, step_i, finetune=False):
             # TODO: fix video id
             video_id = 0
             with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
@@ -135,11 +134,33 @@ def main():
                 loss_dreal = loss.loss_dscreal(score_real)
                 d_loss = loss_dreal + loss_dfake
 
-            gradients_of_generator = gen_tape.gradient(gen_loss, gen.trainable_variables + embedder.trainable_variables)
-            gradients_of_discriminator = disc_tape.gradient(d_loss, discr.trainable_variables)
+            eg_variables = gen.trainable_variables + embedder.trainable_variables
+            discr_variables = discr.trainable_variables
 
-            optimizer_g.apply_gradients(zip(gradients_of_generator, gen.trainable_variables))
-            optimizer_d.apply_gradients(zip(gradients_of_discriminator, discr.trainable_variables))
+            # Some variables won't be trained in not-finetuning mode
+            def delete_unneeded_variables(variables):
+                i = 0
+                while i < len(variables):
+                    if variables[i].name in {'generator/psi:0', 'discriminator/w_prime:0'}:
+                        del variables[i]
+                    i += 1
+                return variables
+
+            if not finetune:
+                delete_unneeded_variables(eg_variables)
+                delete_unneeded_variables(discr_variables)
+
+            gradients_of_generator = gen_tape.gradient(gen_loss, eg_variables)
+            gradients_of_discriminator = disc_tape.gradient(d_loss, discr_variables)
+
+            optimizer_g.apply_gradients(zip(gradients_of_generator, eg_variables))
+            optimizer_d.apply_gradients(zip(gradients_of_discriminator, discr_variables))
+
+            if step_i % 5 == 0:
+                with writer.as_default():
+                    tf.summary.scalar('gen_loss', gen_loss, step=step_i)
+                    tf.summary.scalar('disc_loss', d_loss, step=step_i)
+                print(f'Step {step_i}, gen_loss={gen_loss}, discr_loss={d_loss}')
 
         test_image, test_landmark, test_result = dataset.get_test_batch(k)
 
@@ -150,13 +171,11 @@ def main():
                 k_landmarks = landmarks[:k]
                 l_image = labels[-1]
                 l_landmark = landmarks[-1]
-                step(k_images, k_landmarks, l_image, l_landmark)
+                step(k_images, k_landmarks, l_image, l_landmark, step_i)
 
-            # Save the model every epoch (for now)
+                # Save the model every epoch (for now)
             if (epoch + 1) % 1 == 0:
-                gen.save(checkpoint_dir_e)
-                discr.save(checkpoint_dir_e)
-                embedder.save(checkpoint_dir_e)
+                checkpoint_man.save(checkpoint_number=epoch)
 
             test_pred = gen(test_result, test_landmark)
             LOG.info(tf.summary.image("Result", test_pred, step=epoch))

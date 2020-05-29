@@ -119,7 +119,7 @@ class Generator(tf.keras.Model):
 
     def build(self, input_shape):
         self.p = tf.Variable(initial_value=tf.random.normal([self.P_LEN, 512], 0.0, 0.02), trainable=True, name='p')
-        self.psi = tf.Variable(initial_value=tf.random.normal([self.P_LEN, 1]), trainable=True, name='psi')
+        self.psi = tf.Variable(initial_value=tf.random.uniform([self.P_LEN, 1]), trainable=True, name='psi')
 
     def finetuning_init(self):
         if self.finetuning:
