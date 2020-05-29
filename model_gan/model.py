@@ -284,7 +284,7 @@ class Discriminator(tf.keras.Model):
             out = _out + self.b  # 1x1
 
             # ??? need sigmoid ???
-            out = tf.keras.activations.sigmoid(out)
+            # out = tf.keras.activations.sigmoid(out)
 
         return out, [out1, out2, out3, out4, out5, out6, out7]
 

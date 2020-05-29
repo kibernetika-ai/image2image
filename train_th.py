@@ -160,7 +160,8 @@ def main():
                     tf.summary.scalar('disc_loss', d_loss, step=step_i)
                 print(f'Step {step_i}, gen_loss={gen_loss}, discr_loss={d_loss}')
 
-        test_image, test_landmark, test_result = dataset.get_test_batch(k)
+        refer_images, test_landmarks, test_images = dataset.get_test_batch(k)
+        test_landmark, test_result = np.expand_dims(test_landmarks[0], 0), np.expand_dims(test_images[0], 0)
 
         for epoch in range(args.epochs):
             input_fn = dataset.get_input_fn()
@@ -175,8 +176,13 @@ def main():
             if (epoch + 1) % 1 == 0:
                 checkpoint_man.save(checkpoint_number=epoch)
 
-            test_pred = gen(test_result, test_landmark)
-            LOG.info(tf.summary.image("Result", test_pred, step=epoch))
+            embs = embedder([test_images, test_landmarks])
+            embs = tf.reshape(embs, [args.batch_size, k, 512, 1])
+            embedding = tf.reduce_mean(embs, axis=1)  # out B*512*1
+            test_pred = gen([test_landmark, embedding])
+            with writer.as_default():
+                tf.summary.scalar('val_loss', tf.reduce_mean(tf.abs(test_result - test_pred)))
+                LOG.info(tf.summary.image("Result", test_pred, step=epoch))
 
         # model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf', include_optimizer=False)
         LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
