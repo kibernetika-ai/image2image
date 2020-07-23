@@ -213,9 +213,10 @@ class VOXCeleb(object):
                     shutil.rmtree(final_output_dir)
 
                 landmarks = []
-
-        except Exception as e:
+        except (youtube_dl.utils.ExtractorError, youtube_dl.utils.DownloadError) as e:
             LOG.info(e)
+        except Exception as e:
+            LOG.exception(e)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
