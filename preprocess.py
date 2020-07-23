@@ -1,6 +1,6 @@
 import argparse
 import glob
-import json
+import logging
 import os
 import shutil
 import tempfile
@@ -20,6 +20,7 @@ face_model_path = (
     '/opt/intel/openvino/deployment_tools/intel_models'
     '/face-detection-adas-0001/FP32/face-detection-adas-0001.xml'
 )
+LOG = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -80,10 +81,10 @@ class VOXCeleb(object):
 
         pool.shutdown(wait=True)
 
-        print(f'Result is saved in {output_dir}.')
+        LOG.info(f'Result is saved in {output_dir}.')
 
     def process_video(self, video_dir, video_url, output_dir, fa):
-        print(f'Start processing video {video_url}...')
+        LOG.info(f'Start processing video {video_url}...')
         if os.path.exists(output_dir):
             subvideos = os.listdir(output_dir)
             processed = True
@@ -94,7 +95,7 @@ class VOXCeleb(object):
                     break
 
             if processed:
-                print(f'[video={video_url}] Already downloaded and processed, skipping.')
+                LOG.info(f'[video={video_url}] Already downloaded and processed, skipping.')
                 return
 
         txt_paths = glob.glob(os.path.join(video_dir, '*.txt'))
@@ -150,7 +151,7 @@ class VOXCeleb(object):
                     if intersect_area(first_box, box) < 0.3:
                         # flush landmarks to final_output_dir.
                         if len(landmarks) > self.k:
-                            print(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
+                            LOG.info(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
                             np.save(os.path.join(final_output_dir, 'landmarks.npy'), np.array(landmarks))
                         else:
                             shutil.rmtree(final_output_dir)
@@ -207,19 +208,19 @@ class VOXCeleb(object):
                 # flush landmarks to final_output_dir.
                 if len(landmarks) > self.k:
                     np.save(os.path.join(final_output_dir, 'landmarks.npy'), np.array(landmarks))
-                    print(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
+                    LOG.info(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
                 else:
                     shutil.rmtree(final_output_dir)
 
                 landmarks = []
 
         except Exception as e:
-            print(e)
+            LOG.info(e)
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
 
-        print(f'End processing video {video_url}')
+        LOG.info(f'End processing video {video_url}')
 
     def parse_txt(self, path):
         s = 'FRAME \tX \tY \tW \tH \n'
@@ -243,6 +244,11 @@ class VOXCeleb(object):
 
 def main():
     args = parse_args()
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)-5s %(name)-10s [-] %(message)s',
+        level='INFO'
+    )
+    logging.root.setLevel(logging.INFO)
 
     face_driver = driver.load_driver('openvino')().load_model(face_model_path)
     vox = VOXCeleb(args.data_dir, face_driver)
