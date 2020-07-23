@@ -238,7 +238,7 @@ class VOXCeleb(object):
             if len(splitted) != 5:
                 continue
             frame, x, y, w, h = splitted
-            result.append((int(frame), int(x), int(y), int(w), int(h)))
+            result.append((int(frame), int(float(x)), int(float(y)), int(float(w)), int(float(h))))
 
         return result
 
