@@ -58,10 +58,7 @@ class VOXCeleb(object):
         use_cuda = torch.cuda.is_available()
         use_device = 'cuda' if use_cuda else 'cpu'
 
-        self.fa = []
-        for i in range(4):
-            fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, device=use_device)
-            self.fa.append(fa)
+        self.fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, device=use_device)
 
         self.face_driver = face_driver
         self.k = 45
@@ -74,7 +71,7 @@ class VOXCeleb(object):
             video_id = video_dir.split('/')[-1]
             video_url = f'https://www.youtube.com/watch?v={video_id}'
 
-            pool.submit(self.process_video, video_dir, video_url, os.path.join(output_dir, video_id), self.fa[i % 4])
+            pool.submit(self.process_video, video_dir, video_url, os.path.join(output_dir, video_id), self.fa)
             # if i >= 4:
             #     break
             # self.process_video(video_url, frames, os.path.join(output_dir, video_id))
