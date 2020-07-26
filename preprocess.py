@@ -97,6 +97,7 @@ class VOXCeleb(object):
 
             if processed:
                 LOG.info(f'[video={video_url}] Already downloaded and processed, skipping.')
+                self.sem.release()
                 return
 
         txt_paths = glob.glob(os.path.join(video_dir, '*.txt'))
