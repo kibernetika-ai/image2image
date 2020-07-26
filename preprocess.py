@@ -71,6 +71,7 @@ class VOXCeleb(object):
             video_id = video_dir.split('/')[-1]
             video_url = f'https://www.youtube.com/watch?v={video_id}'
 
+            LOG.info(f'[{i}/{len(videos)}] Start processing video {video_url}...')
             pool.submit(self.process_video, video_dir, video_url, os.path.join(output_dir, video_id), self.fa)
             # if i >= 4:
             #     break
@@ -81,7 +82,6 @@ class VOXCeleb(object):
         LOG.info(f'Result is saved in {output_dir}.')
 
     def process_video(self, video_dir, video_url, output_dir, fa):
-        LOG.info(f'Start processing video {video_url}...')
         if os.path.exists(output_dir):
             subvideos = os.listdir(output_dir)
             processed = True
