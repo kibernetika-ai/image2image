@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 
 from concurrent import futures
 import cv2
@@ -62,16 +63,19 @@ class VOXCeleb(object):
 
         self.face_driver = face_driver
         self.k = 45
+        self.max_workers = 4
+        self.sem = threading.Semaphore(value=self.max_workers)
         # structure: {root}/txt/{idXXXX}/{video_id}/{XXXX}.txt
 
     def process_videos(self, output_dir):
         videos = sorted(glob.glob(os.path.join(self.data_dir, '*/*/*')))
-        pool = futures.ThreadPoolExecutor(max_workers=4)
+        pool = futures.ThreadPoolExecutor(max_workers=self.max_workers)
         for i, video_dir in enumerate(videos):
             video_id = video_dir.split('/')[-1]
             video_url = f'https://www.youtube.com/watch?v={video_id}'
 
             LOG.info(f'[{i}/{len(videos)}] Start processing video {video_url}...')
+            self.sem.acquire()
             pool.submit(self.process_video, video_dir, video_url, os.path.join(output_dir, video_id), self.fa)
             # if i >= 4:
             #     break
@@ -217,6 +221,8 @@ class VOXCeleb(object):
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
+
+        self.sem.release()
 
         LOG.info(f'End processing video {video_url}')
 
