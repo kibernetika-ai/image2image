@@ -267,7 +267,7 @@ def main():
     logging.root.setLevel(logging.INFO)
 
     face_driver = driver.load_driver('openvino')().load_model(face_model_path)
-    vox = VOXCeleb(args.data_dir, face_driver)
+    vox = VOXCeleb(args.data_dir, face_driver, args.cookie)
     vox.process_videos(args.output)
 
 
