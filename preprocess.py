@@ -28,6 +28,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir')
     parser.add_argument('--output', default='output')
+    parser.add_argument('--cookie')
 
     return parser.parse_args()
 
@@ -54,7 +55,7 @@ def draw_points(img, points, color=(0, 0, 250)):
 
 
 class VOXCeleb(object):
-    def __init__(self, data_dir, face_driver):
+    def __init__(self, data_dir, face_driver, cookiefile=None):
         self.data_dir = data_dir
         use_cuda = torch.cuda.is_available()
         use_device = 'cuda' if use_cuda else 'cpu'
@@ -64,7 +65,9 @@ class VOXCeleb(object):
         self.face_driver = face_driver
         self.k = 45
         self.max_workers = 4
+        self.cookie = cookiefile
         self.sem = threading.Semaphore(value=self.max_workers)
+        self.stopped = False
         # structure: {root}/txt/{idXXXX}/{video_id}/{XXXX}.txt
 
     def process_videos(self, output_dir):
@@ -76,6 +79,8 @@ class VOXCeleb(object):
 
             LOG.info(f'[{i}/{len(videos)}] Start processing video {video_url}...')
             self.sem.acquire()
+            if self.stopped:
+                return
             pool.submit(self.process_video, video_dir, video_url, os.path.join(output_dir, video_id), self.fa)
             # if i >= 4:
             #     break
@@ -109,9 +114,11 @@ class VOXCeleb(object):
                 'outtmpl': out_path,
                 'noprogress': True,
             }
+            if self.cookie:
+                ydl_opts['cookiefile'] = self.cookie
 
             with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url)
+                ydl.download([video_url])
 
             vc = cv2.VideoCapture(out_path)
             fps = vc.get(cv2.CAP_PROP_FPS)
@@ -216,6 +223,10 @@ class VOXCeleb(object):
 
                 landmarks = []
         except (youtube_dl.utils.ExtractorError, youtube_dl.utils.DownloadError) as e:
+            if '429' in str(e):
+                self.sem.release()
+                self.stopped = True
+                raise
             LOG.info(e)
         except Exception as e:
             LOG.exception(e)
