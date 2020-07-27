@@ -2,6 +2,7 @@ import argparse
 import glob
 import logging
 import os
+import random
 import shutil
 import tempfile
 import threading
@@ -71,7 +72,8 @@ class VOXCeleb(object):
         # structure: {root}/txt/{idXXXX}/{video_id}/{XXXX}.txt
 
     def process_videos(self, output_dir):
-        videos = sorted(glob.glob(os.path.join(self.data_dir, '*/*/*')))
+        videos = glob.glob(os.path.join(self.data_dir, '*/*/*'))
+        random.shuffle(videos)
         pool = futures.ThreadPoolExecutor(max_workers=self.max_workers)
         for i, video_dir in enumerate(videos):
             video_id = video_dir.split('/')[-1]
