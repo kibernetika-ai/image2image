@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument('--data-dir')
     parser.add_argument('--output', default='output')
     parser.add_argument('--cookie')
+    parser.add_argument('--workers', type=int, default=4)
 
     return parser.parse_args()
 
@@ -56,7 +57,7 @@ def draw_points(img, points, color=(0, 0, 250)):
 
 
 class VOXCeleb(object):
-    def __init__(self, data_dir, face_driver, cookiefile=None):
+    def __init__(self, data_dir, face_driver, cookiefile=None, workers=4):
         self.data_dir = data_dir
         use_cuda = torch.cuda.is_available()
         use_device = 'cuda' if use_cuda else 'cpu'
@@ -65,7 +66,7 @@ class VOXCeleb(object):
 
         self.face_driver = face_driver
         self.k = 45
-        self.max_workers = 4
+        self.max_workers = workers
         self.cookie = cookiefile
         self.sem = threading.Semaphore(value=self.max_workers)
         self.stopped = False
@@ -269,7 +270,7 @@ def main():
     logging.root.setLevel(logging.INFO)
 
     face_driver = driver.load_driver('openvino')().load_model(face_model_path)
-    vox = VOXCeleb(args.data_dir, face_driver, args.cookie)
+    vox = VOXCeleb(args.data_dir, face_driver, args.cookie, workers=args.workers)
     vox.process_videos(args.output)
 
 
