@@ -67,6 +67,10 @@ class VOXCeleb(object):
         self.face_driver = face_driver
         self.k = 45
         self.max_workers = workers
+        if cookiefile and not os.path.exists(cookiefile):
+            # Raise an error.
+            os.stat(cookiefile)
+
         self.cookie = cookiefile
         self.sem = threading.Semaphore(value=self.max_workers)
         self.stopped = False
