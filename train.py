@@ -13,6 +13,7 @@ import tqdm
 
 import common
 import model_def
+from model_gan import loss
 
 
 LOG = logging.getLogger(__name__)

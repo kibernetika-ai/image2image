@@ -25,7 +25,7 @@ def normalize(img):
         else:
             img = img[crop_need // 2:-crop_need // 2, :, :]
 
-    return img.astype(np.float32) / 255.0
+    return img.astype(np.float32) / 127.5 - 1.0
 
 
 def draw_points(img, points, color=(0, 0, 250)):
