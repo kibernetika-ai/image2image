@@ -35,18 +35,18 @@ def select_frames(video_path, K):
 
 def draw_landmark(landmark, canvas=None, size=None):
     if canvas is None:
-        canvas = (np.zeros(size)).astype(np.uint8)
+        canvas = (np.ones(size)).astype(np.uint8) * 255
 
     colors = [
+        (0, 0, 255),
         (0, 255, 0),
-        (255, 255, 0),
-        (255, 255, 0),
+        (0, 255, 0),
         (255, 0, 0),
         (255, 0, 0),
-        (0, 0, 255),
-        (0, 0, 255),
         (0, 255, 255),
         (0, 255, 255),
+        (255, 0, 255),
+        (255, 0, 255),
     ]
 
     chin = landmark[0:17]
@@ -74,7 +74,7 @@ def draw_landmark(landmark, canvas=None, size=None):
         cv2.polylines(
             canvas,
             np.int32([line]), False,
-            cur_color, thickness=1, lineType=cv2.LINE_AA
+            cur_color, thickness=2, lineType=cv2.LINE_AA
         )
 
     return canvas

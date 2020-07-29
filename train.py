@@ -72,7 +72,7 @@ def main():
 
     optimizer = optim.Adam(
         params=list(net.parameters()),
-        lr=5e-4,
+        lr=1e-4,
         amsgrad=False
     )
     """Loss"""
