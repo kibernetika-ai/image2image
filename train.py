@@ -52,7 +52,7 @@ def main():
     batch_size = args.batch_size
     frame_shape = args.frame_shape
 
-    dataset = PreprocessDataset(path_to_preprocess=args.preprocessed, frame_shape=frame_shape)
+    dataset = PreprocessDataset(path_to_preprocess=args.data_dir, frame_shape=frame_shape)
     dataset = DatasetRepeater(dataset, num_repeats=10 if len(dataset) < 100 else 2)
     data_loader = DataLoader(
         dataset,
@@ -184,7 +184,7 @@ def main():
                 accuracy = np.sum(np.squeeze((np.abs(out1 - out2) <= 1))) / np.prod(out1.shape)
                 ssim = metrics.structural_similarity(out1.clip(0, 255).astype(np.uint8), out2.clip(0, 255).astype(np.uint8), multichannel=True)
                 LOG.info(
-                    'Step %d [%d/%d][%d/%d]\tLoss: %.4fMatch: %.3f\tSSIM: %.3f'
+                    'Step %d [%d/%d][%d/%d]\tLoss: %.4f\tMatch: %.3f\tSSIM: %.3f'
                     % (step, epoch, num_epochs, i_batch, len(data_loader),
                        loss.item(), accuracy, ssim)
                 )

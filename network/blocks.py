@@ -131,7 +131,7 @@ class SinusoidalEncoding(nn.Module):
 
 # Residual block
 class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, downsample=None, norm=nn.BatchNorm2d):
+    def __init__(self, in_channels, out_channels, stride=1, downsample=None, norm=nn.BatchNorm2d, activation=nn.ReLU):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.utils.spectral_norm(conv3x3(in_channels, out_channels, stride))
         if norm:
@@ -144,7 +144,10 @@ class ResidualBlock(nn.Module):
         else:
             self.bn1 = None
             self.bn2 = None
-        self.relu = nn.ReLU()
+        if activation:
+            self.relu = nn.ReLU()
+        else:
+            self.relu = None
         self.conv2 = nn.utils.spectral_norm(conv3x3(out_channels, out_channels))
         self.downsample = downsample
 
@@ -153,14 +156,16 @@ class ResidualBlock(nn.Module):
         out = self.conv1(x)
         if self.bn1:
             out = self.bn1(out)
-        out = self.relu(out)
+        if self.relu is not None:
+            out = self.relu(out)
         out = self.conv2(out)
         if self.bn2:
             out = self.bn2(out)
         if self.downsample:
             residual = self.downsample(x)
         out += residual
-        out = self.relu(out)
+        if self.relu is not None:
+            out = self.relu(out)
         return out
 
 
@@ -266,7 +271,8 @@ class ResidualBlockUp(nn.Module):
 
 # Residual block
 class ResidualBlockUpNew(nn.Module):
-    def __init__(self, in_channels, out_channels, is_bilinear=True, norm=nn.BatchNorm2d):
+    def __init__(self, in_channels, out_channels, is_bilinear=True, norm=nn.BatchNorm2d,
+                 upsample_mode='nearest', activation=nn.ReLU):
         super(ResidualBlockUpNew, self).__init__()
         self.conv1 = nn.utils.spectral_norm(conv3x3(in_channels, out_channels))
         if norm is not None:
@@ -277,12 +283,16 @@ class ResidualBlockUpNew(nn.Module):
         else:
             self.bn1 = None
 
-        self.relu = nn.ReLU()
-        self.res1 = ResidualBlock(out_channels, out_channels, norm=norm)
-        self.res2 = ResidualBlock(out_channels, out_channels, norm=norm)
+        if activation:
+            self.relu = activation()
+        else:
+            self.relu = None
+
+        self.res1 = ResidualBlock(out_channels, out_channels, norm=norm, activation=activation)
+        self.res2 = ResidualBlock(out_channels, out_channels, norm=norm, activation=activation)
 
         if is_bilinear:
-            self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
+            self.upsample = nn.Upsample(scale_factor=2, mode=upsample_mode)
         else:
             self.upsample = nn.utils.spectral_norm(
                 nn.ConvTranspose2d(in_channels, in_channels, kernel_size=1, stride=2, output_padding=1)
@@ -296,7 +306,8 @@ class ResidualBlockUpNew(nn.Module):
 
         out = self.res1(out_res)
         out = self.res2(out)
-        out = self.relu(out)
+        if self.relu is not None:
+            out = self.relu(out)
 
         return out
 
