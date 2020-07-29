@@ -9,7 +9,7 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
 
         self.device = device
-        self.unet = UNet(n_channels=6, n_classes=2, upsample_mode='nearest')
+        self.unet = UNet(n_channels=6, n_classes=2, upsample_mode='bicubic')
 
     def forward(self, src_img, target_lmark):
         src = torch.cat([src_img, target_lmark], dim=-3)
@@ -31,12 +31,12 @@ class UNet(nn.Module):
         self.down5 = Down(512, 1024 // factor)
         self.down6 = Down(512, 1024 // factor)
 
-        self.resup = blocks.ResidualBlockUpNew(512, 512, upsample_mode=upsample_mode)
-        self.up1 = Up(1024, 512, upsample_mode=upsample_mode)
-        self.up2 = Up(1024, 256, upsample_mode=upsample_mode)
-        self.up3 = Up(512, 128, upsample_mode=upsample_mode)
-        self.up4 = Up(256, 64, upsample_mode=upsample_mode)
-        self.up5 = Up(128, 3, upsample_mode=upsample_mode)
+        self.resup = blocks.ResidualBlockUpNew(512, 512, upsample_mode=upsample_mode, norm=nn.InstanceNorm2d)
+        self.up1 = Up(1024, 512, upsample_mode=upsample_mode, norm=nn.InstanceNorm2d)
+        self.up2 = Up(1024, 256, upsample_mode=upsample_mode, norm=nn.InstanceNorm2d)
+        self.up3 = Up(512, 128, upsample_mode=upsample_mode, norm=nn.InstanceNorm2d)
+        self.up4 = Up(256, 64, upsample_mode=upsample_mode, norm=nn.InstanceNorm2d)
+        self.up5 = Up(128, 3, upsample_mode=upsample_mode, norm=nn.InstanceNorm2d, activation=None)
 
     def forward(self, x):
         s1 = self.down1(x)
@@ -85,8 +85,8 @@ class Down(nn.Module):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.utils.spectral_norm(nn.Conv2d(in_channels, out_channels, stride=2, kernel_size=3, padding=1)),
-            blocks.ResidualBlock(out_channels, out_channels),
-            blocks.ResidualBlock(out_channels, out_channels),
+            blocks.ResidualBlock(out_channels, out_channels, norm=nn.InstanceNorm2d),
+            blocks.ResidualBlock(out_channels, out_channels, norm=nn.InstanceNorm2d),
         )
 
     def forward(self, x):
@@ -96,11 +96,16 @@ class Down(nn.Module):
 class Up(nn.Module):
     """Upscaling then double conv"""
 
-    def __init__(self, in_channels, out_channels, upsample_mode='nearest'):
+    def __init__(self, in_channels, out_channels,
+                 upsample_mode='nearest', norm=nn.BatchNorm2d, activation=nn.ReLU):
         super().__init__()
 
         self.layers = nn.Sequential(
-            blocks.ResidualBlockUpNew(in_channels, out_channels, upsample_mode=upsample_mode, activation=None)
+            blocks.ResidualBlockUpNew(
+                in_channels, out_channels,
+                upsample_mode=upsample_mode,
+                activation=activation, norm=norm
+            )
         )
 
     def forward(self, x1, x2):
