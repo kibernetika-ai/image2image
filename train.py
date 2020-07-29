@@ -1,19 +1,24 @@
+"""Main"""
 import argparse
-import glob
-import json
 import logging
-import os
-import random
 import sys
+import time
 
-import cv2
-import numpy as np
-import tensorflow as tf
-import tqdm
+import matplotlib
+from skimage import metrics
+import tensorboardX
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
 
-import common
-import model_def
-from model_gan import loss
+from dataset.dataset_class import PreprocessDataset
+from dataset.dataset_class import DatasetRepeater
+from dataset.video_extraction_conversion import *
+from loss.loss_discriminator import *
+from loss.loss_generator import *
+from network.model import *
+from network.resblocks import *
 
 
 LOG = logging.getLogger(__name__)
@@ -21,297 +26,205 @@ LOG = logging.getLogger(__name__)
 
 def parse_args():
     parser = argparse.ArgumentParser()
-
-    parser.add_argument('--batch-size', type=int, default=1)
-    parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--lr-scheduler', action='store_true')
-    parser.add_argument('--mode', default='train')
-    parser.add_argument('--export', action='store_true')
-    parser.add_argument('--model-dir', default='train')
-    parser.add_argument('--output', default='saved_model')
+    parser.add_argument('--batch-size', default=1, type=int)
+    parser.add_argument('--epochs', default=10, type=int)
+    parser.add_argument('--save-checkpoint', type=int, default=1000)
+    parser.add_argument('--train-dir', default='train')
+    parser.add_argument('--vggface-dir', default='.')
     parser.add_argument('--data-dir')
-    parser.add_argument('--steps', type=int, default=1000)
-    parser.add_argument('--epochs', type=int, default=5)
-    parser.add_argument('--resolution', default="256x256")
-    parser.add_argument('--loss', default="mse")
+    parser.add_argument('--frame-shape', default=256, type=int)
+    parser.add_argument('--workers', default=4, type=int)
 
     return parser.parse_args()
 
 
-def parse_resolution(res):
-    splitted = res.split('x')
-    if len(splitted) != 2:
-        raise RuntimeError("Resolution must be in form WxH")
-
-    return int(splitted[0]), int(splitted[1])
-
-
-class ImageDataset:
-    def __init__(self, data_dir, batch_size=1,
-                 img_num=10, width=256, height=256, shuffle=True, val_split=0.0):
-        self.batch_size = batch_size
-
-        # structure: {root}/{video_id}/{XXXXX}.jpg
-        # structure: {root}/{video_id}/boxes.json
-        data_dir = data_dir.rstrip('/')
-        self.video_dirs = [os.path.join(data_dir, d) for d in os.listdir(data_dir)]
-        if val_split > 0:
-            self.train_dirs = self.video_dirs[:int(len(self.video_dirs) * (1 - val_split))]
-            self.val_dirs = self.video_dirs[int(len(self.video_dirs) * (1 - val_split)):]
-        else:
-            self.train_dirs = self.video_dirs
-            self.val_dirs = []
-
-        self.shuffle = shuffle
-        self.img_num = img_num
-        self.width = width
-        self.resize_height = height
-        self.height = height // 16 * 16
-
-    def get_video_num(self):
-        return len(self.train_dirs)
-
-    def get_generator(self, dir_list, shuffle=True):
-        target_list = dir_list
-
-        def generate_batches():
-            if shuffle:
-                random.shuffle(target_list)
-
-            for video_dir in target_list:
-                # load boxes.json
-                # with open(os.path.join(video_dir, 'boxes.json')) as f:
-                #     boxes = json.loads(f.read())
-                # load landmarks.json
-                with open(os.path.join(video_dir, 'landmarks.json')) as f:
-                    landmarks = json.loads(f.read())
-
-                img_paths = sorted(glob.glob(os.path.join(video_dir, '*.jpg')))
-                reference = cv2.imread(img_paths[0], cv2.IMREAD_COLOR)
-                reference = cv2.cvtColor(reference, cv2.COLOR_BGR2RGB)
-                reference = cv2.resize(reference, (self.width, self.resize_height))
-                reference = common.normalize(reference)
-
-                img_paths = img_paths[1:]
-                if shuffle:
-                    random.shuffle(img_paths)
-
-                for img_path in img_paths:
-                    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    img = cv2.resize(img, (self.width, self.resize_height))
-
-                    # Normalization
-                    img = common.normalize(img)
-                    basename = os.path.basename(img_path)
-                    landmark = np.array(landmarks[basename]).astype(np.float32)
-                    landmark_img = common.landmarks_to_img(landmark, img.shape)
-
-                    yield (reference, landmark_img), img
-        return generate_batches
-
-    def _get_ds_from_list(self, dir_list):
-        dataset = tf.data.Dataset.from_generator(
-            self.get_generator(dir_list, shuffle=self.shuffle),
-            ((tf.float32, tf.float32), tf.float32),
-            (
-                (tf.TensorShape([None, None, 3]), tf.TensorShape([None, None, 3])),
-                tf.TensorShape([None, None, 3])
-            )
-        )
-        return dataset.padded_batch(self.batch_size, drop_remainder=True).prefetch(self.batch_size * 2)
-
-    def get_input_fn(self):
-        return self._get_ds_from_list(self.train_dirs)
-
-    def get_test_batch(self, num):
-        gen = self.get_generator(self.train_dirs, shuffle=False)
-        refs = []
-        labels = []
-        landmarks = []
-        i = 0
-        for (ref, landmark), label in gen():
-            refs.append(ref)
-            landmarks.append(landmark)
-            labels.append(label)
-            i += 1
-            if i >= num:
-                break
-
-        return np.stack(refs), np.stack(landmarks), np.stack(labels)
-
-    def get_val_input_fn(self):
-        return self._get_ds_from_list(self.val_dirs)
-
-
-mean = np.array([0.485, 0.456, 0.406]).reshape([1, 1, 3])
-std = np.array([0.229, 0.224, 0.225]).reshape([1, 1, 3])
-
-
-class Scheduler:
-    def __init__(self, initial_learning_rate=0.05, epochs=10):
-        self.epochs = epochs
-        self.learning_rate = initial_learning_rate
-
-    def schedule(self, epoch):
-        if epoch < 0.3 * self.epochs:
-            return self.learning_rate
-        elif epoch < 0.5 * self.epochs:
-            return self.learning_rate / 5
-        elif epoch < 0.75 * self.epochs:
-            return self.learning_rate / 25
-        else:
-            return self.learning_rate / 250
-
-
-class LogImageCallback(tf.keras.callbacks.Callback):
-    def __init__(self, model_dir, test_image, test_landmark):
-        super(LogImageCallback, self).__init__()
-        self.epoch = 0
-        self._lock_batches = False
-        self.batches = 0
-        self.model_dir = model_dir
-        self.test_image = test_image
-        self.test_landmark = test_landmark
-        self.writer = tf.summary.create_file_writer(os.path.join(self.model_dir, 'train/im'), name='image')
-
-    def on_epoch_end(self, epoch, logs=None):
-        self.epoch += 1
-        self._lock_batches = True
-
-    def on_batch_end(self, batch, logs=None):
-        # Use the model to predict the values from the validation dataset.
-        if not self._lock_batches:
-            self.batches += 1
-            return
-        current_batch = batch
-        if self._lock_batches:
-            current_batch += self.epoch * self.batches
-
-        if current_batch % 1000 != 0:
-            return
-
-        # LOG.info('LOG_IMAGE!' + str(current_batch))
-        test_pred = self.model.predict_on_batch((self.test_image, self.test_landmark))
-
-        # Log the confusion matrix as an image summary.
-        self.writer.init()
-        with self.writer.as_default():
-            written = tf.summary.image("Result", test_pred, step=current_batch)
-            # LOG.info(written)
-
-
 def main():
-    args = parse_args()
     logging.basicConfig(
         format='%(asctime)s %(levelname)-5s %(name)-10s [-] %(message)s',
         level='INFO'
     )
     logging.root.setLevel(logging.INFO)
-    w, h = parse_resolution(args.resolution)
-    dataset = ImageDataset(args.data_dir, args.batch_size, width=w, height=h)
+    
+    args = parse_args()
+    """Create dataset and net"""
+    cpu = torch.device("cpu")
+    device = torch.device("cuda") if torch.cuda.is_available() else cpu
+    batch_size = args.batch_size
+    frame_shape = args.frame_shape
 
-    # inp = dataset.get_input_fn()
-    # it = inp.as_numpy_iterator()
-    # for i in it:
-    #     (_, landmarks), img = i
-    #     l_img = landmarks[0]
-    #     l_img = (l_img * 255.0).astype(np.uint8).clip(0, 255)
-    #     cv2.imshow('img', l_img)
-    #     k = cv2.waitKey(0)
-    #     if k == 27:
-    #         break
-    # return
-
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        LOG.info("=" * 50)
-        LOG.info(f"Set memory growth to {gpu}")
-        tf.config.experimental.set_memory_growth(gpu, True)
-        LOG.info("=" * 50)
-
-    model = model_def.build_model(image_shape=(h, w))
-    # LOG.info(model.summary())
-
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(amsgrad=True),
-        # loss=[CrossEntropyLoss(num_classes=dataset.num_classes()), None],
-        loss=[args.loss],
-        metrics=['accuracy']
+    dataset = PreprocessDataset(path_to_preprocess=args.preprocessed, frame_shape=frame_shape)
+    dataset = DatasetRepeater(dataset, num_repeats=10 if len(dataset) < 100 else 2)
+    data_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=args.workers,
     )
-    mode = args.mode
 
-    if mode == 'train':
-        scheduler = Scheduler(initial_learning_rate=args.lr, epochs=args.epochs)
-        (test_image, test_landmark), test_result = dataset.get_test_batch(1)
-        # test_image = np.expand_dims(test_image, axis=0)
-        # test_landmark = np.expand_dims(test_landmark, axis=0)
+    path_to_chkpt = os.path.join(args.train_dir, 'weights.pkl')
+    if os.path.isfile(path_to_chkpt):
+        checkpoint = torch.load(path_to_chkpt, map_location=cpu)
 
-        callbacks = [
-            LogImageCallback(args.model_dir, test_image, test_landmark),
-            tf.keras.callbacks.TensorBoard(
-                log_dir=os.path.join(args.model_dir),
-                update_freq=50, write_images=True
-            ),
-        ]
-        if args.lr_scheduler:
-            callbacks.append(tf.keras.callbacks.LearningRateScheduler(scheduler.schedule, verbose=1))
-        model.fit(
-            x=dataset.get_input_fn(),
-            # validation_data=dataset.get_val_input_fn(),
-            # batch_size=args.batch_size,
-            epochs=args.epochs,
-            verbose=1 if sys.stdout.isatty() else 2,
-            callbacks=callbacks,
-            # tf.keras.callbacks.ModelCheckpoint(
-            #     os.path.join(args.model_dir, 'checkpoint'),
-            #     verbose=1,
-            # ),
-        )
-        model.save(os.path.join(args.model_dir, 'checkpoint'), save_format='tf', include_optimizer=False)
-        LOG.info(f'Checkpoint is saved to {os.path.join(args.model_dir, "checkpoint")}.')
+    net = nn.DataParallel(Generator(frame_shape, device).to(device))
 
-    if mode == 'validate':
-        m = tf.keras.models.load_model(os.path.join(args.model_dir, 'checkpoint'))
-        # model.load_weights()
-        gen = dataset.get_generator(dataset.val_dirs)()
-        for i, (imgs, label) in tqdm.tqdm(enumerate(gen)):
-            output = m.predict_on_batch(np.expand_dims(imgs, axis=0))
-            val_output = (output[0] * 255.0).astype(np.uint8).clip(0, 255)
-            cv2.imwrite(f'{i}.png', val_output[:, :, ::-1])
+    net.train()
 
-    if mode == 'export' or args.export:
-        model.load_weights(os.path.join(args.model_dir, 'checkpoint'))
-        model.outputs = model.outputs[::-1]
-        model.output_names = model.output_names[::-1]
-        model.save(args.output, save_format='tf', include_optimizer=False)
-        LOG.info(f'Saved to {args.output}')
+    optimizer = optim.Adam(
+        params=list(net.parameters()),
+        lr=5e-4,
+        amsgrad=False
+    )
+    """Loss"""
+    loss_fun = LossG(
+        os.path.join(args.vggface_dir, 'Pytorch_VGGFACE_IR.py'),
+        os.path.join(args.vggface_dir, 'Pytorch_VGGFACE.pth'),
+        device
+    )
 
-    # config_proto = tf.compat.v1.ConfigProto(log_device_placement=True)
-    # config = tf.estimator.RunConfig(
-    #     model_dir=args.model_dir,
-    #     save_summary_steps=100,
-    #     keep_checkpoint_max=5,
-    #     log_step_count_steps=10,
-    #     session_config=config_proto,
-    # )
-    # estimator_model = tf.keras.estimator.model_to_estimator(
-    #     keras_model=model,
-    #     model_dir=args.model_dir,
-    #     config=config,
-    #     checkpoint_format='saver',
-    # )
-    #
-    # if mode == 'train':
-    #     estimator_model.train(
-    #         input_fn=dataset.get_input_fn,
-    #         steps=args.steps,
-    #     )
-    # elif mode == 'export':
-    #     saved_path = estimator_model.export_saved_model(
-    #         args.model_dir,
-    #     )
-    #     LOG.info(f'Saved to {saved_path}.')
+    """Training init"""
+    epoch = i_batch = 0
+
+    num_epochs = args.epochs
+
+    # initiate checkpoint if inexistant
+    if not os.path.exists(args.train_dir):
+        os.makedirs(args.train_dir)
+    if not os.path.isfile(path_to_chkpt):
+        def init_weights(m):
+            if type(m) == nn.Conv2d:
+                torch.nn.init.xavier_uniform(m.weight)
+
+        net.apply(init_weights)
+
+        LOG.info('Initiating new checkpoint...')
+        torch.save({
+            'epoch': epoch,
+            'state_dict': net.module.state_dict(),
+            'num_vid': dataset.__len__(),
+            'i_batch': i_batch,
+            'optimizer': optimizer.state_dict(),
+        }, path_to_chkpt)
+        LOG.info('...Done')
+        prev_step = 0
+    else:
+        """Loading from past checkpoint"""
+        net.module.load_state_dict(checkpoint['state_dict'], strict=False)
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+        except ValueError:
+            pass
+        prev_step = checkpoint['i_batch']
+
+    net.train()
+
+    """Training"""
+    writer = tensorboardX.SummaryWriter(args.train_dir)
+    num_batches = len(dataset) / args.batch_size
+    log_step = int(round(0.005 * num_batches + 20))
+    log_epoch = 1
+    if num_batches <= 100:
+        log_step = 50
+        log_epoch = 300 // num_batches
+    save_checkpoint = args.save_checkpoint
+    LOG.info(f"Will log each {log_step} step.")
+    LOG.info(f"Will save checkpoint each {save_checkpoint} step.")
+    if prev_step != 0:
+        LOG.info(f"Starting at {prev_step} step.")
+
+    for epoch in range(0, num_epochs):
+        # if epochCurrent > epoch:
+        #     pbar = tqdm(dataLoader, leave=True, initial=epoch, disable=None)
+        #     continue
+        # Reset random generator
+        for i_batch, (src_img, _, target_img, target_mark, i) in enumerate(data_loader):
+
+            src_img = src_img.to(device).reshape([-1, *list(src_img.shape[2:])])
+            # marks = marks.to(device).reshape([-1, *list(marks.shape[2:])])
+            target_mark = target_mark.to(device)
+            target_img = target_img.to(device)
+
+            with torch.autograd.enable_grad():
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # train G and D
+                fake = net(src_img, target_mark)
+
+                loss = loss_fun(target_img, fake)
+                loss.backward()
+                optimizer.step()
+
+            step = epoch * num_batches + i_batch + prev_step
+
+            # Output training stats
+            if step % log_step == 0:
+                def get_picture(tensor):
+                    return (tensor[0] * 127.5 + 127.5).permute([1, 2, 0]).type(torch.int32).to(cpu).numpy()
+
+                def make_grid(tensor):
+                    np_image = (tensor * 127.5 + 127.5).permute([0, 2, 3, 1]).type(torch.int32).to(cpu).numpy()
+                    np_image = np_image.clip(0, 255).astype(np.uint8)
+                    canvas = np.zeros([frame_shape, frame_shape, 3])
+                    size = math.ceil(math.sqrt(tensor.shape[0]))
+                    im_size = frame_shape // size
+                    for i, im in enumerate(np_image):
+                        col = i % size
+                        row = i // size
+                        im = cv2.resize(im, (im_size, im_size))
+                        canvas[row * im_size:(row+1) * im_size, col*im_size:(col+1) * im_size] = im
+
+                    return canvas
+
+                out1 = get_picture(fake)
+                out2 = get_picture(target_img)
+                out3 = get_picture(target_mark)
+                out4 = make_grid(src_img)
+
+                accuracy = np.sum(np.squeeze((np.abs(out1 - out2) <= 1))) / np.prod(out1.shape)
+                ssim = metrics.structural_similarity(out1.clip(0, 255).astype(np.uint8), out2.clip(0, 255).astype(np.uint8), multichannel=True)
+                LOG.info(
+                    'Step %d [%d/%d][%d/%d]\tLoss: %.4fMatch: %.3f\tSSIM: %.3f'
+                    % (step, epoch, num_epochs, i_batch, len(data_loader),
+                       loss.item(), accuracy, ssim)
+                )
+
+                image = np.hstack((out1, out2, out3, out4)).clip(0, 255).astype(np.uint8)
+                writer.add_image(
+                    'Result', image,
+                    global_step=step,
+                    dataformats='HWC'
+                )
+                writer.add_scalar('loss', loss.item(), global_step=step)
+                writer.add_scalar('match', accuracy, global_step=step)
+                writer.add_scalar('ssim', ssim, global_step=step)
+                writer.flush()
+
+            if step != 0 and step % save_checkpoint == 0:
+                LOG.info('Saving latest...')
+                torch.save({
+                    'epoch': epoch,
+                    'state_dict': net.module.state_dict(),
+                    'num_vid': dataset.__len__(),
+                    'i_batch': step,
+                    'optimizer': optimizer.state_dict(),
+                },
+                    path_to_chkpt
+                )
+                LOG.info('...Done saving latest')
+
+        if epoch % log_epoch == 0:
+            LOG.info('Saving latest...')
+            torch.save({
+                'epoch': epoch,
+                'state_dict': net.module.state_dict(),
+                'num_vid': dataset.__len__(),
+                'i_batch': step,
+                'optimizer': optimizer.state_dict(),
+            },
+                path_to_chkpt
+            )
+            LOG.info('...Done saving latest')
 
 
 if __name__ == '__main__':
