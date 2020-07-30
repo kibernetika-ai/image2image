@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 from dataset.dataset_class import PreprocessDataset
 from dataset.dataset_class import DatasetRepeater
 from dataset.video_extraction_conversion import *
-from loss.loss_discriminator import *
 from loss.loss_generator import *
 from network.model import *
 from network.resblocks import *
@@ -33,7 +32,7 @@ def parse_args():
     parser.add_argument('--vggface-dir', default='.')
     parser.add_argument('--data-dir')
     parser.add_argument('--frame-shape', default=256, type=int)
-    parser.add_argument('--workers', default=4, type=int)
+    parser.add_argument('--workers', default=2, type=int)
 
     return parser.parse_args()
 

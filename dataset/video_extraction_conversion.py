@@ -37,16 +37,27 @@ def draw_landmark(landmark, canvas=None, size=None):
     if canvas is None:
         canvas = (np.ones(size)).astype(np.uint8) * 255
 
+    # colors = [
+    #     (0, 0, 255),
+    #     (0, 255, 0),
+    #     (0, 255, 0),
+    #     (255, 0, 0),
+    #     (255, 0, 0),
+    #     (0, 255, 255),
+    #     (0, 255, 255),
+    #     (255, 0, 255),
+    #     (255, 0, 255),
+    # ]
     colors = [
-        (0, 0, 255),
-        (0, 255, 0),
-        (0, 255, 0),
-        (255, 0, 0),
-        (255, 0, 0),
-        (0, 255, 255),
-        (0, 255, 255),
-        (255, 0, 255),
-        (255, 0, 255),
+        (75, 135, 200),
+        (80, 185, 70),
+        (80, 185, 70),
+        (255, 100, 75),
+        (255, 100, 75),
+        (100, 200, 200),
+        (100, 200, 200),
+        (205, 140, 190),
+        (205, 140, 190),
     ]
 
     chin = landmark[0:17]
@@ -57,7 +68,7 @@ def draw_landmark(landmark, canvas=None, size=None):
     right_eye = landmark[42:48]
     right_eye = np.concatenate((right_eye, [landmark[42]]))
     nose1 = landmark[27:31]
-    # nose1 = np.concatenate((nose1, [landmark[33]]))
+    nose1 = np.concatenate((nose1, [landmark[31]]))
     nose2 = landmark[31:36]
     mouth = landmark[48:60]
     mouth = np.concatenate((mouth, [landmark[48]]))
