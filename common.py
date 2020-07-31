@@ -143,30 +143,5 @@ def get_crop_box(img, box, margin=0):
     return np.array([xmin, ymin, xmax, ymax])
 
 
-def shape_to_np(shape, dtype="int"):
-    # initialize the list of (x, y)-coordinates
-    coords = np.zeros((68, 2), dtype=dtype)
-
-    # loop over the 68 facial landmarks and convert them
-    # to a 2-tuple of (x, y)-coordinates
-    for i in range(0, 68):
-        coords[i] = (shape.part(i).x, shape.part(i).y)
-
-    # return the list of (x, y)-coordinates
-    return coords
-
-
-def get_landmarks(model, frame, box):
-    box = box.astype(np.int)
-    if isinstance(model, face_alignment.FaceAlignment):
-        shape = model.get_landmarks_from_image(frame, [box])[0]
-    else:
-        rect = dlib.rectangle(box[0], box[1], box[2], box[3])
-        shape = model(frame, rect)
-        shape = shape_to_np(shape)
-
-    return shape
-
-
 def load_shape_model(shape_path):
     return dlib.shape_predictor(shape_path)

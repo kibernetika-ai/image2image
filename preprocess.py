@@ -66,6 +66,8 @@ class VOXCeleb(object):
 
         self.face_driver = face_driver
         self.k = 45
+        self.min_face_size = 80
+        self.min_image_size = self.min_face_size * 1.8
         self.max_workers = workers
         if cookiefile and not os.path.exists(cookiefile):
             # Raise an error.
@@ -97,19 +99,36 @@ class VOXCeleb(object):
 
         LOG.info(f'Result is saved in {output_dir}.')
 
+    def validate_video_dir(self, video_url, output_dir):
+        subvideos = os.listdir(output_dir)
+        processed = True
+        for subvideo in subvideos:
+            path = os.path.join(output_dir, subvideo)
+            if not os.path.exists(path + '/landmarks.npy'):
+                processed = False
+                break
+
+        if processed:
+            # Check for images
+            for subvideo in subvideos:
+                images = glob.glob(os.path.join(output_dir, subvideo, '*.jpg'))
+                for img_path in images:
+                    img = cv2.imread(img_path)
+                    if (img.shape[0] * img.shape[1]) < self.min_image_size * self.min_image_size:
+                        # Delete whole subvideo dir including landmarks.npy because it does not make sense anymore.
+                        shutil.rmtree(os.path.join(output_dir, subvideo))
+                        break
+            if len(os.listdir(output_dir)) == 0:
+                LOG.info(f'Delete invalid processed video: {video_url}')
+                shutil.rmtree(output_dir)
+            else:
+                LOG.info(f'[video={video_url}] Already downloaded and processed, skipping.')
+            self.sem.release()
+            return True
+
     def process_video(self, video_dir, video_url, output_dir, fa):
         if os.path.exists(output_dir):
-            subvideos = os.listdir(output_dir)
-            processed = True
-            for subvideo in subvideos:
-                path = os.path.join(output_dir, subvideo)
-                if not os.path.exists(path + '/landmarks.npy'):
-                    processed = False
-                    break
-
-            if processed:
-                LOG.info(f'[video={video_url}] Already downloaded and processed, skipping.')
-                self.sem.release()
+            if self.validate_video_dir(output_dir, video_url):
                 return
 
         txt_paths = glob.glob(os.path.join(video_dir, '*.txt'))
@@ -163,6 +182,10 @@ class VOXCeleb(object):
                     box = boxes[0]
                     if first_box is None:
                         first_box = box.copy()
+
+                    # check face area
+                    if (box[2] - box[0]) * (box[3] - box[1]) < self.min_face_size * self.min_face_size:
+                        continue
 
                     if intersect_area(first_box, box) < 0.3:
                         # flush landmarks to final_output_dir.

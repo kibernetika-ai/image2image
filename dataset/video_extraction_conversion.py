@@ -90,9 +90,9 @@ def draw_landmark(landmark, canvas=None, size=None):
 
     return canvas
 
+
 def norm_landmarks(landmarks,in_size=(450,450), size=256):
     frame_landmark_list = []
-
 
     for i in range(len(landmarks)):
         # try:
@@ -126,6 +126,7 @@ def norm_landmarks(landmarks,in_size=(450,450), size=256):
         frame_landmark_list.append(frame_landmark_list[i])
 
     return frame_landmark_list
+
 
 def generate_landmarks(frames_list, face_aligner, size=256, crop=True, margins=None):
     frame_landmark_list = []
