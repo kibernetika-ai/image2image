@@ -84,19 +84,25 @@ class VOXCeleb(object):
         pool = futures.ThreadPoolExecutor(max_workers=self.max_workers)
         for i, video_dir in enumerate(videos):
             video_id = video_dir.split('/')[-1]
-            video_url = f'https://www.youtube.com/watch?v={video_id}'
+            if video_dir.endswith('.mp4'):
+                video_url = '/'.join(video_dir.split('/')[-3:-1:1])
+            else:
+                video_url = f'https://www.youtube.com/watch?v={video_id}'
 
             LOG.info(f'[{i}/{len(videos)}] Start processing video {video_url}...')
             self.sem.acquire()
             if self.stopped:
                 return
-            pool.submit(self.process_video, video_dir, video_url, os.path.join(output_dir, video_id), self.fa)
+
+            if video_dir.endswith('.mp4'):
+                pool.submit(self.process_video, video_dir, os.path.join(output_dir, video_id), self.fa)
+            else:
+                pool.submit(self.process_text_dir, video_dir, video_url, os.path.join(output_dir, video_id), self.fa)
             # if i >= 4:
             #     break
             # self.process_video(video_url, frames, os.path.join(output_dir, video_id))
 
         pool.shutdown(wait=True)
-
         LOG.info(f'Result is saved in {output_dir}.')
 
     def validate_video_dir(self, video_url, output_dir):
@@ -123,12 +129,110 @@ class VOXCeleb(object):
                 shutil.rmtree(output_dir)
             else:
                 LOG.info(f'[video={video_url}] Already downloaded and processed, skipping.')
-            self.sem.release()
-            return True
 
-    def process_video(self, video_dir, video_url, output_dir, fa):
+            return True
+        else:
+            LOG.info('not processed ??')
+            return False
+
+    def process_video(self, video_path, output_dir, fa):
         if os.path.exists(output_dir):
-            if self.validate_video_dir(output_dir, video_url):
+            if self.validate_video_dir(video_path, output_dir):
+                self.sem.release()
+                return
+
+        vc = cv2.VideoCapture(video_path)
+        landmarks = []
+
+        subvideo = 0
+        final_output_dir = os.path.join(output_dir, str(subvideo))
+        os.makedirs(final_output_dir, exist_ok=True)
+        save_frame_num = 0
+        first_box = None
+        while True:
+            ret, frame = vc.read()
+            if not ret:
+                break
+
+            boxes = common.get_boxes(self.face_driver, frame, threshold=.8)
+            if len(boxes) != 1:
+                continue
+            box = boxes[0]
+            if first_box is None:
+                first_box = box.copy()
+
+            # check face area
+            if (box[2] - box[0]) * (box[3] - box[1]) < self.min_face_size * self.min_face_size:
+                continue
+
+            if intersect_area(first_box, box) < 0.3:
+                # flush landmarks to final_output_dir.
+                if len(landmarks) > self.k:
+                    LOG.info(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
+                    np.save(os.path.join(final_output_dir, 'landmarks.npy'), np.array(landmarks))
+                else:
+                    shutil.rmtree(final_output_dir)
+                landmarks = []
+                first_box = None
+                subvideo += 1
+                final_output_dir = os.path.join(output_dir, str(subvideo))
+                os.makedirs(final_output_dir, exist_ok=True)
+                save_frame_num = 0
+
+            # save frame
+            file_name = f'{save_frame_num:05d}.jpg'
+            cropped_ratio = 0.4
+            w = box[2] - box[0]
+            h = box[3] - box[1]
+            new_box = np.array([
+                max(round(box[0] - cropped_ratio * w), 0),
+                max(round(box[1] - cropped_ratio * h), 0),
+                min(round(box[2] + w * cropped_ratio), frame.shape[1]),
+                min(round(box[3] + h * cropped_ratio), frame.shape[0]),
+            ]).astype(np.int)
+            cropped_frame = frame[new_box[1]:new_box[3], new_box[0]:new_box[2]]
+            # get landmarks and accumulate them.
+            new_face_box = np.array([
+                box[0] - new_box[0],
+                box[1] - new_box[1],
+                new_box[2] - box[2] + w,
+                new_box[3] - box[3] + h,
+            ]).astype(int)
+            # get landmarks from RGB frame and accumulate them.
+            lmark = fa.get_landmarks_from_image(cropped_frame[:, :, ::-1], [new_face_box])
+            if len(lmark) == 0:
+                continue
+
+            landmarks.append(lmark[0])
+            cv2.imwrite(os.path.join(final_output_dir, file_name), cropped_frame)
+
+            save_frame_num += 1
+
+            # cv2.rectangle(
+            #     cropped_frame,
+            #     (new_face_box[0], new_face_box[1]),
+            #     (new_face_box[2], new_face_box[3]),
+            #     (0, 250, 0), thickness=1, lineType=cv2.LINE_AA
+            # )
+            # draw_points(cropped_frame, lmark[0])
+            # cv2.imshow('Video', cropped_frame)
+            # key = cv2.waitKey(0)
+            # if key == 27:
+            #     return
+
+        # flush landmarks to final_output_dir.
+        if len(landmarks) > self.k:
+            np.save(os.path.join(final_output_dir, 'landmarks.npy'), np.array(landmarks))
+            LOG.info(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
+        else:
+            shutil.rmtree(final_output_dir)
+
+        self.sem.release()
+        LOG.info(f'End processing video {video_path}')
+
+    def process_text_dir(self, video_dir, video_url, output_dir, fa):
+        if os.path.exists(output_dir):
+            if self.validate_video_dir(video_url, output_dir):
                 return
 
         txt_paths = glob.glob(os.path.join(video_dir, '*.txt'))
