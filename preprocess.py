@@ -80,7 +80,7 @@ class VOXCeleb(object):
 
     def process_videos(self, output_dir):
         videos = glob.glob(os.path.join(self.data_dir, '*/*/*'))
-        random.shuffle(videos)
+        # random.shuffle(videos)
         pool = futures.ThreadPoolExecutor(max_workers=self.max_workers)
         for i, video_dir in enumerate(videos):
             video_id = video_dir.split('/')[-1]
