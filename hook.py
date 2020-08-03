@@ -78,43 +78,52 @@ def process(inputs, ctx, **kwargs):
 
     boxes = common.get_boxes(face_driver, image)
 
-    # TODO: for example
-    output = np.zeros([256, 256, 3]).astype(np.uint8)
+    if len(boxes) == 1:
+        for box in boxes:
+            crop_box = common.get_crop_box(image, box, margin=PARAMS['margin'])
+            cropped = common.crop_by_box(image, box, margin=PARAMS['margin'])
+            resized = cv2.resize(cropped, (PARAMS['image_size'], PARAMS['image_size']), interpolation=cv2.INTER_AREA)
 
-    for box in boxes:
-        crop_box = common.get_crop_box(image, box, margin=PARAMS['margin'])
-        cropped = common.crop_by_box(image, box, margin=PARAMS['margin'])
-        resized = cv2.resize(cropped, (PARAMS['image_size'], PARAMS['image_size']), interpolation=cv2.INTER_AREA)
+            landmarks = fa.get_landmarks_from_image(image, [crop_box])[0]
+            landmarks -= [crop_box[0], crop_box[1]]
+            x_factor, y_factor = (crop_box[2] - crop_box[0]) / PARAMS['image_size'], (crop_box[3] - crop_box[1]) / PARAMS['image_size']
+            landmarks /= [x_factor, y_factor]
+            landmark_img = video_extraction_conversion.draw_landmark(
+                landmarks, size=(PARAMS['image_size'], PARAMS['image_size'], 3)
+            )
 
-        landmarks = fa.get_landmarks_from_image(image, [crop_box])[0]
-        landmarks -= [crop_box[0], crop_box[1]]
-        x_factor, y_factor = (crop_box[2] - crop_box[0]) / PARAMS['image_size'], (crop_box[3] - crop_box[1]) / PARAMS['image_size']
-        landmarks /= [x_factor, y_factor]
-        landmark_img = video_extraction_conversion.draw_landmark(
-            landmarks, size=(PARAMS['image_size'], PARAMS['image_size'], 3)
-        )
+            norm_image = torch.from_numpy(np.expand_dims(resized, axis=0)).type(dtype=torch.float)  # K,256,256,3
+            norm_mark = torch.from_numpy(np.expand_dims(landmark_img, axis=0)).type(dtype=torch.float)  # K,256,256,3
+            norm_image = (norm_image.permute([0, 3, 1, 2]) - 127.5) / 127.5
+            norm_mark = (norm_mark.permute([0, 3, 1, 2]) - 127.5) / 127.5  # K,3,256,256
 
-        norm_image = torch.from_numpy(np.expand_dims(resized, axis=0)).type(dtype=torch.float)  # K,256,256,3
-        norm_mark = torch.from_numpy(np.expand_dims(landmark_img, axis=0)).type(dtype=torch.float)  # K,256,256,3
-        norm_image = (norm_image.permute([0, 3, 1, 2]) - 127.5) / 127.5
-        norm_mark = (norm_mark.permute([0, 3, 1, 2]) - 127.5) / 127.5  # K,3,256,256
+            t = time.time()
+            with torch.no_grad():
+                outputs = torch_model(PARAMS['face'], norm_mark)
+            LOG.info(f'model time: {time.time() - t}')
+            t = time.time()
 
-        t = time.time()
-        with torch.no_grad():
-            outputs = torch_model(PARAMS['face'], norm_mark)
-        LOG.info(f'model time: {time.time() - t}')
-        t = time.time()
+            output = get_picture(outputs)
+            # cv2.imwrite(
+            #     'VV.jpg', np.hstack([
+            #         get_picture(outputs)[:, :, ::-1],
+            #         get_picture(norm_mark)[:, :, ::-1],
+            #         get_picture(norm_image)[:, :, ::-1],
+            #         get_picture(PARAMS['face'])[:, :, ::-1]
+            #     ])
+            # )
+            # import sys; sys.exit(1)
+            output = cv2.resize(output, (PARAMS['face_shape'][1], PARAMS['face_shape'][0]), interpolation=cv2.INTER_AREA)
+            LOG.info(f'get and resize: {time.time() - t}')
+            t = time.time()
 
-        output = get_picture(outputs)
-        output = cv2.resize(output, (PARAMS['face_shape'][1], PARAMS['face_shape'][0]), interpolation=cv2.INTER_AREA)
-        LOG.info(f'get and resize: {time.time() - t}')
-        t = time.time()
-
-        # image[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]] = output
-        mask = np.ones_like(output) * 255
-        center_box = (PARAMS['face_shape'][1] // 2, PARAMS['face_shape'][0] // 2)
-        image = cv2.seamlessClone(output, PARAMS['full'], mask, center_box, cv2.NORMAL_CLONE)
-        LOG.info(f'seamless clone: {time.time() - t}')
+            # image[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]] = output
+            mask = np.ones_like(output) * 255
+            center_box = (PARAMS['face_shape'][1] // 2, PARAMS['face_shape'][0] // 2)
+            image = cv2.seamlessClone(output, PARAMS['full'], mask, center_box, cv2.NORMAL_CLONE)
+            LOG.info(f'seamless clone: {time.time() - t}')
+    else:
+        image = PARAMS['full']
 
     if is_video:
         output = image
