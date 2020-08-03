@@ -233,6 +233,7 @@ class VOXCeleb(object):
     def process_text_dir(self, video_dir, video_url, output_dir, fa):
         if os.path.exists(output_dir):
             if self.validate_video_dir(video_url, output_dir):
+                self.sem.release()
                 return
 
         txt_paths = glob.glob(os.path.join(video_dir, '*.txt'))
