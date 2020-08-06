@@ -267,7 +267,7 @@ class VOXCeleb(object):
                 first_box = None
 
                 for data in frames:
-                    frame_num, _, _, _, _ = data
+                    frame_num, x, y, w, h = data
                     real_frame_num = round(frame_num / 25 * fps)
 
                     # read frame by real frame number
@@ -281,10 +281,7 @@ class VOXCeleb(object):
                     if not ret:
                         break
 
-                    boxes = common.get_boxes(self.face_driver, frame, threshold=.8)
-                    if len(boxes) != 1:
-                        continue
-                    box = boxes[0]
+                    box = [x, y, x + w, y + h]
                     if first_box is None:
                         first_box = box.copy()
 
@@ -292,7 +289,7 @@ class VOXCeleb(object):
                     if (box[2] - box[0]) * (box[3] - box[1]) < self.min_face_size * self.min_face_size:
                         continue
 
-                    if intersect_area(first_box, box) < 0.3:
+                    if intersect_area(first_box, box) < 0.4:
                         # flush landmarks to final_output_dir.
                         if len(landmarks) > self.k:
                             LOG.info(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')

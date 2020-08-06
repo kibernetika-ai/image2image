@@ -17,7 +17,8 @@ PARAMS = {
     'torch_model': '',
     'margin': 0.4,
     'image_size': 256,
-    'face_shape': (0, 0)
+    'face_shape': (0, 0),
+    'face_box': [],
 }
 
 
@@ -41,7 +42,9 @@ def init_hook(ctx, **params):
         raise RuntimeError('target image must include exactly 1 face. Provide path via -o target=<path>')
 
     face = common.crop_by_box(ref_img, boxes[0], margin=PARAMS['margin'])
+    face_box = common.get_crop_box(ref_img, boxes[0], margin=PARAMS['margin'])
     PARAMS['face_shape'] = face.shape
+    PARAMS['face_box'] = face_box
 
     face = cv2.resize(face, (PARAMS['image_size'], PARAMS['image_size']), interpolation=cv2.INTER_AREA)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
@@ -114,14 +117,16 @@ def process(inputs, ctx, **kwargs):
             # )
             # import sys; sys.exit(1)
             output = cv2.resize(output, (PARAMS['face_shape'][1], PARAMS['face_shape'][0]), interpolation=cv2.INTER_AREA)
-            LOG.info(f'get and resize: {time.time() - t}')
-            t = time.time()
+            # LOG.info(f'get and resize: {time.time() - t}')
+            # t = time.time()
 
-            # image[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]] = output
-            mask = np.ones_like(output) * 255
-            center_box = (PARAMS['face_shape'][1] // 2, PARAMS['face_shape'][0] // 2)
-            image = cv2.seamlessClone(output, PARAMS['full'], mask, center_box, cv2.NORMAL_CLONE)
-            LOG.info(f'seamless clone: {time.time() - t}')
+            face_box = PARAMS['face_box']
+            image = PARAMS['full'].copy()
+            image[face_box[1]:face_box[3], face_box[0]:face_box[2]] = output
+            # mask = np.ones_like(output) * 255
+            # center_box = ((face_box[2] + face_box[0]) // 2, (face_box[3] + face_box[1]) // 2)
+            # image = cv2.seamlessClone(output, PARAMS['full'], mask, center_box, cv2.NORMAL_CLONE)
+            # LOG.info(f'seamless clone: {time.time() - t}')
     else:
         image = PARAMS['full']
 
