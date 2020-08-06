@@ -292,7 +292,7 @@ class VOXCeleb(object):
                     if (box[2] - box[0]) * (box[3] - box[1]) < self.min_face_size * self.min_face_size:
                         continue
 
-                    if intersect_area(first_box, box) < 0.3:
+                    if intersect_area(first_box, box) < 0.4:
                         # flush landmarks to final_output_dir.
                         if len(landmarks) > self.k:
                             LOG.info(f'Saved {len(landmarks)} frames/landmarks in {final_output_dir}')
